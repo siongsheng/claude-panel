@@ -12,6 +12,12 @@ order, **idempotently** —
 detect what already exists and skip it, never clobber. Stay repo-agnostic; read the
 target repo's own conventions.
 
+**Re-running is expected — not just for first-time setup.** The CI reviewers are vendored
+into the target repo, so a plugin update refreshes the templates here but NOT the copies
+already in a repo. Whenever panel ships a new CI reviewer (e.g. the architecture review),
+an existing repo picks it up by re-running `/panel-init`: idempotency means you add the
+newly-shipped workflows and skip everything already present.
+
 Your working directory is the TARGET repo, not this plugin. Files referred to below as
 "this plugin's `<path>`" live in the panel plugin's install directory — the directory
 that contains this command file (resolve it once, e.g. `PLUGIN_ROOT`, and read the
