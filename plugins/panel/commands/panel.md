@@ -73,8 +73,10 @@ Never trust the implementer's claim that gates pass; verify independently.
 
 ### 5. Review panel (parallel, independent)
 Open a PR (body in the required five-section format: `## Why`, `## Impact to
-Stakeholders`, `## What's in this PR`, `## Notable decision`, `## Validation`). Then
-run BOTH reviewer families IN PARALLEL, each independent of the implementer:
+Stakeholders`, `## What's in this PR`, `## Notable decision`, `## Validation`). Then run
+the reviewer families IN PARALLEL, each independent of the implementer. The Claude-side
+family is the **mandatory floor**; the cross-model family is **additive and opt-out**
+(see below):
 - **Claude-side reviewer(s):** run in a fresh context / subagent that did not write
   the code, and apply the `adversarial-review` skill's dimensions and verdict format.
   These reviewers are NOT interchangeable for architecture — cover BOTH:
@@ -86,12 +88,20 @@ run BOTH reviewer families IN PARALLEL, each independent of the implementer:
     specialties (type-design, silent-failure, test-gap, comment accuracy). It does
     NOT review system architecture, so it is an *addition* to the required reviewer
     above, never a substitute for it.
-- **Cross-model reviewer:** `scripts/deepseek_review.py <pr> --post` (path relative to
-  this plugin) so a second model family (DeepSeek) cross-checks. Invoke the
-  `multi-model-review` skill if this is the first run and setup is needed.
+- **Cross-model reviewer (additive, OPT-OUT):** `scripts/deepseek_review.py <pr> --post`
+  (path relative to this plugin) so a second model family (DeepSeek) cross-checks with
+  different blind spots. Invoke the `multi-model-review` skill if this is the first run
+  and setup is needed. **A developer who doesn't want to configure a second provider may
+  skip this** — it is NOT one of the non-negotiable invariants. With no
+  `DEEPSEEK_API_KEY` configured, the CI Action no-ops and stays green, so skipping never
+  fails a gate. When you skip it, say so: the Claude-side floor (including the REQUIRED
+  architecture reviewer) still runs, but you forfeit the second-model blind-spot
+  coverage — record the skip in the findings ledger so the reduced coverage is visible,
+  not silent.
 
 The CI-hosted reviewer (the bundled `templates/deepseek-review.yml` Action) also runs
-per-push; let it. CI must go green.
+per-push when a `DEEPSEEK_API_KEY` secret is set; let it. CI must go green (the Action
+no-ops green when no key is set, so single-provider repos are unaffected).
 
 ### 6. Triage
 Apply the `blocker-triage` skill to EVERY finding from EVERY reviewer, BEFORE changing
