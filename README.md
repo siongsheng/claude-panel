@@ -20,8 +20,10 @@ Plus a **findings-ledger** discipline (one edited-in-place table per PR) and **d
 Panel composes these — install them too:
 
 ```
-/plugin marketplace add obra/superpowers      # brainstorming, plans, TDD, worktrees, systematic-debugging
-/plugin install feature-dev@claude-plugins-official   # Understand → Design → Implement → Review spine
+/plugin marketplace add obra/superpowers                    # brainstorming, plans, TDD, worktrees, systematic-debugging
+/plugin install superpowers@superpowers
+/plugin marketplace add anthropics/claude-plugins-official  # official plugin marketplace
+/plugin install feature-dev@claude-plugins-official         # Understand → Design → Implement → Review spine
 /plugin install pr-review-toolkit@claude-plugins-official   # Claude-side review lenses
 ```
 
