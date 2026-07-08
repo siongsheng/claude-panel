@@ -34,8 +34,11 @@ repo.
 
 Confirm: `gh auth status` is authenticated, the working directory is the target git
 repo, and the user has admin on the repo (secrets + App install need it). Determine the
-repo slug (`gh repo view --json nameWithOwner`). If any precondition fails, report
-exactly what the human must do and stop.
+repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own vendored
+resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
+`templates/tdd-gate.yml`, `scripts/deepseek_review.py`, `bin/tdd-check` — so init
+triages itself up front instead of crashing mid-run. If any precondition fails, report
+exactly what's missing / what the human must do and stop.
 
 ## The setup
 
@@ -51,8 +54,10 @@ provide resolve. If any are missing, print the exact `/plugin marketplace add` /
 ### 2. Architecture-covering reviewer (REQUIRED)
 Verify at least one reviewer that reviews architecture/design, coupling, breaking
 changes, and spec compliance is installed: superpowers' `requesting-code-review` **or**
-feature-dev's `code-reviewer`. `pr-review-toolkit` ships NO architecture agent, so it
-does not count. If only `pr-review-toolkit` is present, this is a GAP — flag it loudly
+feature-dev's `code-reviewer`. Check concretely — look for the skill/agent file in the
+installed plugin dir (e.g. superpowers' `skills/requesting-code-review/SKILL.md`, or
+feature-dev's `code-reviewer` agent) rather than inferring from the plugin name alone.
+`pr-review-toolkit` ships NO architecture agent, so it does not count. If only `pr-review-toolkit` is present, this is a GAP — flag it loudly
 and require the user to install one of the two above before setup is considered done.
 
 ### 3. Claude-side reviewer — `/install-github-app`
@@ -75,9 +80,12 @@ which cannot see plugin-local paths. So **vendor** both files into the target re
   GitHub-hosted runners where `gh` is preinstalled; on self-hosted runners the workflow
   must install `gh` first.)
 
-Then set the API key secret. First **check** `gh secret list` and skip if already set.
-Otherwise **obtain the value** — never call `gh secret set` with no value, it will hang
-on stdin:
+Then set the API key secret. First **check** `gh secret list` and skip if already set —
+but if the existing secret is **org-level and the target repo is public**, verify its
+visibility (`gh secret list --org <org>`); a `private`-visibility org secret is silently
+withheld from public repos, so re-scope it with `--visibility all` rather than assuming
+"present == working". Otherwise **obtain the value** — never call `gh secret set` with no
+value, it will hang on stdin:
 - **Interactive:** ask the user to paste the DeepSeek API key (or read it from a
   `DEEPSEEK_API_KEY` environment variable if present), then
   `printf '%s' "$KEY" | gh secret set DEEPSEEK_API_KEY [scope]`.
