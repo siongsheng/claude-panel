@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "claude-panel",
+  "description": "Prevention-first agentic development: a YAGNI gate before code, adversarial multi-model review, and disciplined finding-tracking — composed on top of the official feature-dev workflow.",
+  "owner": {
+    "name": "siongsheng",
+    "email": "siongsheng@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "panel",
+      "source": "./plugins/panel",
+      "description": "Prevention-first development panel: ponytail-guard YAGNI gate, spec-strategist, deterministic two-commit TDD, cross-model adversarial review (Claude + DeepSeek), and a single edited-in-place findings ledger with auto-filed tracking issues. Wraps the official feature-dev workflow rather than reinventing it.",
+      "category": "development",
+      "author": {
+        "name": "siongsheng"
+      },
+      "keywords": ["yagni", "code-review", "tdd", "adversarial-review", "workflow", "pr"]
+    }
+  ]
+}
