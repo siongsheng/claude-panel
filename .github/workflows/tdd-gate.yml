@@ -1,0 +1,32 @@
+# This repo's own copy of templates/tdd-gate.yml, with the checker path adjusted
+# for this repo's layout (tdd-check lives under plugins/panel/bin/, not repo-root
+# bin/). Downstream repos get the generic template via /panel-init.
+name: TDD gate
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tdd-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tdd-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ancestry check needs full history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run tdd-check
+        run: >-
+          python3 plugins/panel/bin/tdd-check
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head "${{ github.event.pull_request.head.sha }}"
