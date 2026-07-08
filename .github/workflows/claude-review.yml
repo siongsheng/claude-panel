@@ -1,0 +1,50 @@
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+# Least privilege: read the code, comment on the PR.
+permissions:
+  contents: read
+  pull-requests: write
+
+# One run per PR at a time; a new push cancels the in-flight review.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # No-op cleanly until ANTHROPIC_API_KEY is set. The Claude-side review is
+    # panel's mandatory floor, but it can also be satisfied by running the
+    # /panel loop locally -- so a repo without this secret must not fail CI.
+    env:
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - name: Skip notice
+        if: env.HAS_KEY != 'true'
+        run: echo "ANTHROPIC_API_KEY secret not set -- skipping Claude CI review. Set it with 'gh secret set ANTHROPIC_API_KEY', or run the /panel loop locally for the Claude-side review."
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          fetch-depth: 0
+      - name: Claude adversarial review
+        if: env.HAS_KEY == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # panel's adversarial-review dimensions, condensed for CI.
+          prompt: |
+            Adversarially review this pull request for merge, from a fresh
+            context (you did not write it). Apply panel's adversarial-review
+            dimensions:
+              - Spec compliance: does it do what it claims; any scope creep?
+              - Architectural impact: coupling, breaking changes, dependency
+                direction, API/schema changes.
+              - Code quality: correctness, security, error handling, edge cases.
+            Separate newly-introduced issues from pre-existing debt -- only
+            defects this change INTRODUCED block merge. Post findings inline and
+            end with ONE verdict line: VERDICT: APPROVED | CHANGES REQUESTED |
+            BLOCKED, and RISK: LOW | MEDIUM | HIGH.

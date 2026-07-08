@@ -36,7 +36,8 @@ Confirm: `gh auth status` is authenticated, the working directory is the target 
 repo, and the user has admin on the repo (secrets + App install need it). Determine the
 repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own vendored
 resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
-`templates/tdd-gate.yml`, `scripts/deepseek_review.py`, `bin/tdd-check` — so init
+`templates/claude-review.yml`, `templates/tdd-gate.yml`, `scripts/deepseek_review.py`,
+`bin/tdd-check` — so init
 triages itself up front instead of crashing mid-run. If any precondition fails, report
 exactly what's missing / what the human must do and stop.
 
@@ -60,9 +61,17 @@ feature-dev's `code-reviewer` agent) rather than inferring from the plugin name 
 `pr-review-toolkit` ships NO architecture agent, so it does not count. If only `pr-review-toolkit` is present, this is a GAP — flag it loudly
 and require the user to install one of the two above before setup is considered done.
 
-### 3. Claude-side reviewer — `/install-github-app`
+### 3. Claude-side reviewer — `/install-github-app` (+ panel-flavored CI review)
 Invoke Claude Code's built-in `/install-github-app`. It installs the Claude GitHub App,
 adds its workflow, and sets `ANTHROPIC_API_KEY` so `@claude` works on PRs/issues.
+
+For a CI-native review that runs panel's own `adversarial-review` dimensions on every PR
+(symmetric with the DeepSeek Action), also vendor this plugin's
+`templates/claude-review.yml` → `.github/workflows/claude-review.yml`. It reuses the
+`ANTHROPIC_API_KEY` set above and no-ops cleanly if that secret is absent, so it never
+fails CI. This is the CI counterpart to the in-session Claude reviewer the `/panel` loop
+runs — either satisfies the Claude-side floor.
+
 - **Interactive (default):** run it; the human completes the OAuth consent.
 - **Headless:** you cannot complete OAuth. Detect prior setup by checking for the
   App's workflow file under `.github/workflows/` (e.g. a `claude`/`claude-code`
