@@ -46,7 +46,10 @@ Work on a feature branch (never the default branch). If the work is parallelizab
 you want isolation from the working tree, use superpowers' `using-git-worktrees` to
 run it in a dedicated worktree; `dispatching-parallel-agents` if you fan out.
 
-Implement following strict two-commit TDD:
+Implement following strict two-commit TDD — drive it with superpowers'
+`test-driven-development` skill (the RED-GREEN-REFACTOR discipline); panel's own
+`bin/tdd-check` (step 4) only *enforces* the resulting commit shape, it does not teach
+the cycle:
 - A `test:` commit lands FIRST — failing tests that pin the intended behavior.
 - A `feat:` commit lands SECOND — the implementation that makes them pass.
 - The `test:` commit MUST be a git **ancestor** of the `feat:` commit (ancestry, not
@@ -56,6 +59,10 @@ Implement following strict two-commit TDD:
 Prefer having an implementer subagent do the code so the supervising context stays
 clean and can later host an independent reviewer. The implementer does not run the
 review.
+
+If a test won't pass or behavior is wrong, have the implementer invoke superpowers'
+`systematic-debugging` skill to find the root cause before editing — never guess at
+fixes.
 
 ### 4. Deterministic TDD gate
 Run `bin/tdd-check` (path relative to this plugin) against the branch. A bundled-commit
@@ -103,6 +110,9 @@ must be tightly reconciled), then runs one **worktree-isolated** agent per clust
 the Workflow tool). The two-commit TDD cadence still holds per cluster. After merging the
 worktrees back, re-run the COMBINED gate (repo test suite + `bin/tdd-check`) on the branch
 — both must be green before review is considered resolved.
+
+For any finding whose root cause isn't obvious — a failing test, a regression, wrong
+behavior — apply superpowers' `systematic-debugging` before editing, as in step 3.
 
 ### 8. Findings ledger
 Invoke the `findings-ledger` skill: maintain exactly ONE "📋 Review Findings Ledger"
