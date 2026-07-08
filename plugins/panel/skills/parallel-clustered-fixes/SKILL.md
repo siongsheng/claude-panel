@@ -53,10 +53,13 @@ wrong — those findings belong to the same cluster (that's overlap ⇒ likely s
 
 ## Step 2 — one worktree-isolated agent per cluster
 
-Fan the clusters out with the **Workflow** tool, one agent per cluster, each in its
-own git worktree (`isolation: 'worktree'`). Worktree isolation is what makes
-parallel file-editing safe — without it, agents share one working tree and clobber
-each other's edits.
+Fan the clusters out with the SAME parallel/worktree mechanism panel already uses in
+step 3 of the loop — superpowers' `using-git-worktrees` + `dispatching-parallel-agents`
+(or, equivalently, the Workflow tool with `isolation: 'worktree'`). One agent per
+cluster, each in its own git worktree. Worktree isolation is what makes parallel
+file-editing safe — without it, agents share one working tree and clobber each
+other's edits. Do not introduce a second vocabulary for this; use whichever of the
+two the surrounding loop already invoked.
 
 Each cluster agent:
 
@@ -67,7 +70,8 @@ Each cluster agent:
 - Is an implementer, not a reviewer (the `implementer ≠ reviewer` invariant holds —
   these fresh fix agents did not review the PR).
 
-Sketch (adapt to the actual clusters):
+Sketch in the Workflow-tool form (the `dispatching-parallel-agents` form is the
+equivalent — adapt to whichever the loop is using, and to the actual clusters):
 
 ```
 const clusters = [ /* from the partition table */ ];
@@ -84,8 +88,13 @@ await parallel(clusters.map(c => () =>
 ## Step 3 — merge back and re-run the COMBINED gate
 
 Because clusters are file-disjoint, merging their commits onto the feature branch
-does not conflict. Bring each worktree's `test:`→`impl:` commits back onto the
-branch, preserving per-cluster ancestry.
+should not conflict on the source files. **Caveat:** disjoint *source* files can still
+share a manifest/registration file — Rust `mod.rs`/`lib.rs`, `package.json`,
+`__init__.py`, lockfiles — that more than one cluster edits. When you build the
+partition (Step 1), count those indirect edits too: if two clusters would both touch
+a shared manifest, they OVERLAP and must be merged into one cluster (fixed serially).
+Bring each worktree's `test:`→`impl:` commits back onto the branch, preserving
+per-cluster ancestry.
 
 Then, on the combined branch, **re-run the full gate — this is non-negotiable**:
 

@@ -1,5 +1,5 @@
 ---
-description: Run one feature end-to-end through the review panel — YAGNI gate, plan, two-commit TDD on a branch, deterministic TDD gate, parallel cross-model review, triage, findings ledger, deferred-to-issues, then pause for merge.
+description: Run one feature end-to-end through the review panel — YAGNI gate, plan, two-commit TDD on a branch, deterministic TDD gate, parallel cross-model review, triage, fix (serial or parallel worktree-isolated clusters), findings ledger, deferred-to-issues, then pause for merge.
 ---
 
 # /panel — orchestrate one feature through the panel loop
