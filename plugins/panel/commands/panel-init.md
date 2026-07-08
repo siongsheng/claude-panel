@@ -4,9 +4,11 @@ description: One-shot setup that wires a target repo for the full panel loop —
 
 # /panel-init — wire a repo for the panel loop
 
-You are the SUPERVISOR of a one-shot repo setup. Panel's premise is **two review
-families with different blind spots** plus a deterministic TDD gate; this command makes
-a target repo satisfy that premise. Set up each leg below, in order, **idempotently** —
+You are the SUPERVISOR of a one-shot repo setup. Panel's premise is **independent review
+with a deterministic TDD gate**, ideally cross-checked by a second model family — the
+cross-model leg is additive and opt-out (step 4), the Claude-side floor and the gate are
+not. This command makes a target repo satisfy that premise. Set up each leg below, in
+order, **idempotently** —
 detect what already exists and skip it, never clobber. Stay repo-agnostic; read the
 target repo's own conventions.
 
@@ -82,7 +84,14 @@ floor. (Whichever review family the repo does NOT run in CI is covered by runnin
   (JWT) and typically 403/404s with a user token. If no workflow is found, instruct the
   user to run `/install-github-app` interactively and continue — do NOT fail the run.
 
-### 4. DeepSeek-side reviewer (cross-model CI)
+### 4. DeepSeek-side reviewer (cross-model CI) — OPTIONAL
+This leg is **opt-out**: cross-model review is additive, not one of panel's
+non-negotiable invariants. If the developer doesn't want to configure a second provider,
+ask once and, on decline, skip steps 4's secret setup — still vendor the Action (it
+no-ops cleanly with no key, so it's harmless and ready if they add a key later), note
+"single-provider mode" in the final checklist, and continue. The Claude-side floor
+(step 2/3) remains required.
+
 The CI Action runs `python3 scripts/deepseek_review.py` **inside the target repo's CI**,
 which cannot see plugin-local paths. So **vendor** both files into the target repo:
 - Copy this plugin's `templates/deepseek-review.yml` → `.github/workflows/deepseek-review.yml`.
@@ -125,11 +134,12 @@ step there instead of a second workflow (never clobber the existing one). The ga
 fail a bundled-commit / broken-ancestry branch.
 
 ### 6. Verify + report
-Print a checklist of every leg with its state — ✅ done / ⏭️ already present / ⚠️ needs
-human action (with the exact command) / ❌ gap (e.g. no architecture reviewer). The
-setup is COMPLETE only when steps 2, 4, and 5 are ✅/⏭️; step 3 may remain ⚠️ in
-headless mode (the human finishes the OAuth). End with the one-line command to run the
-loop: `/panel <feature>`.
+Print a checklist of every leg with its state — ✅ done / ⏭️ already present /
+🚫 opted out / ⚠️ needs human action (with the exact command) / ❌ gap (e.g. no
+architecture reviewer). The setup is COMPLETE when steps 2 and 5 are ✅/⏭️ and step 4 is
+✅/⏭️/🚫 (opting out of cross-model counts as satisfied — single-provider mode is a valid
+complete outcome); step 3 may remain ⚠️ in headless mode (the human finishes the OAuth).
+End with the one-line command to run the loop: `/panel <feature>`.
 
 ## Modes
 

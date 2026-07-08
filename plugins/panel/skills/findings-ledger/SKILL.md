@@ -41,6 +41,18 @@ issue are ✅ Fixed and ❌ Rejected. Do not leave a Standing or Deferred findin
 ledger note only — that lets real defects go untracked. (See the `deferred-to-issues`
 skill for filing them.)
 
+## Record which reviewers ran
+
+The ledger is also the record of coverage. Under the table, note which reviewer families
+ran — and, critically, which were **skipped**. If the cross-model (DeepSeek) family was
+skipped (e.g. single-provider repo with no `DEEPSEEK_API_KEY`), state it explicitly:
+
+> _Reviewers: Claude-side (adversarial + architecture) ✅ · Cross-model (DeepSeek) ⏭️
+> skipped — single-provider mode, no second-model coverage this PR._
+
+This keeps reduced coverage visible instead of letting a reader assume both families
+reviewed. Never omit a skipped family silently.
+
 ## Dedupe across reviewers
 
 When two reviewers (say Claude and DeepSeek) raise the same finding, it is ONE row with
