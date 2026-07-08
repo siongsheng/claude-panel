@@ -1,16 +1,18 @@
-# This repo's own copy of templates/deepseek-review.yml, with the script path
-# adjusted for this repo's layout (the script lives under plugins/panel/, not
-# repo-root scripts/). Downstream repos get the generic template via /panel-init.
+# This repo's own copy of templates/deepseek-review.yml — identical except the
+# script path (this repo keeps scripts/ under plugins/panel/). Downstream repos
+# get the generic template via /panel-init.
 name: DeepSeek review
 
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
 
+# Least privilege: read the code, comment on the PR.
 permissions:
   contents: read
   pull-requests: write
 
+# One run per PR at a time; a new push cancels the in-flight review.
 concurrency:
   group: deepseek-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -18,12 +20,14 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # cap a hung API call from consuming runner minutes.
+    # No-op cleanly until the DEEPSEEK_API_KEY secret is configured.
     env:
       HAS_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}
     steps:
       - name: Skip notice
         if: env.HAS_KEY != 'true'
-        run: echo "DEEPSEEK_API_KEY secret not set — skipping DeepSeek review."
+        run: echo "DEEPSEEK_API_KEY secret not set — skipping DeepSeek review. Set it with 'gh secret set DEEPSEEK_API_KEY'."
       - uses: actions/checkout@v4
         if: env.HAS_KEY == 'true'
       - uses: actions/setup-python@v5

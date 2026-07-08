@@ -17,6 +17,7 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # cap a hung API call from consuming runner minutes.
     # No-op cleanly until the DEEPSEEK_API_KEY secret is configured.
     env:
       HAS_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}

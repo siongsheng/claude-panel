@@ -70,7 +70,9 @@ For a CI-native review that runs panel's own `adversarial-review` dimensions on 
 `templates/claude-review.yml` → `.github/workflows/claude-review.yml`. It reuses the
 `ANTHROPIC_API_KEY` set above and no-ops cleanly if that secret is absent, so it never
 fails CI. This is the CI counterpart to the in-session Claude reviewer the `/panel` loop
-runs — either satisfies the Claude-side floor.
+runs — either satisfies the Claude-side floor. Caveat: because the no-op returns green,
+do NOT mark this as a *required* status check while the key is unset (a green no-op isn't
+a real review) — with no key, the `/panel` loop is what enforces the floor.
 
 - **Interactive (default):** run it; the human completes the OAuth consent.
 - **Headless:** you cannot complete OAuth. Detect prior setup by checking for the
