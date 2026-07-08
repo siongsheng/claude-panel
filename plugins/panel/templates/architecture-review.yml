@@ -8,13 +8,16 @@ name: Architecture review
 # replace this floor.
 #
 # The prompt below DISTILLS the stable patterns from the surveyed
-# architecture-review skills so the floor captures their substance without
-# their churn/licensing:
+# architecture-review skills + literature so the floor captures their substance
+# without their churn/licensing:
+#   - coupling & cohesion as the dominant axes  (SE literature, arXiv:1901.09050)
 #   - dependency-direction & hexagonal/layering rubric   (decebals/java)
 #   - concrete complexity thresholds + refactor roadmap  (pokayokay/srstomp)
-#   - disciplined, evidence-based, high-signal findings   (warden/getsentry)
-#   - architectural-decision (ADR) & trade-off lens        (vasilyu/arch-design)
-#   - a systematic question checklist                      (rknall/python-arch)
+#   - disciplined, evidence-based, high-signal findings   (getsentry code-review)
+#   - architectural-decision (ADR) & trade-off lens        (vasilyu; adr.github.io)
+#   - versioned API contracts, consistent error-handling, externalized config,
+#     right-level abstraction, change-propagation blast radius  (wshobson/agents,
+#     MIT Architecture Review Checklist)
 #
 # The official claude-code-review.yml runs /code-review (correctness/quality),
 # NOT architecture -- this is the complementary architecture lens.
@@ -66,7 +69,8 @@ jobs:
             Judge ONLY what THIS change introduces; list pre-existing debt
             separately and never block on it.
 
-            Walk this checklist and cite file:line evidence for every finding:
+            Walk this checklist and cite file:line evidence for every finding.
+            COUPLING and COHESION are the dominant concerns -- weight them most.
             1. BOUNDARIES & COHESION: Does the change respect module/layer
                boundaries and separation of concerns? Flag logic leaking across
                layers or a module taking on a second responsibility.
@@ -74,23 +78,32 @@ jobs:
                abstractions (domain/core), never domain->infrastructure or
                stable->volatile? Flag new cycles and inward-pointing violations
                (Dependency Inversion / ports-and-adapters).
-            3. COMPLEXITY THRESHOLDS: Flag concrete signals, not vibes --
-               oversized functions/files, deep nesting, high fan-in/fan-out, a
-               new god-object, or duplicated structure that should be extracted.
-            4. CONTRACTS & BREAKING CHANGES: Breaking changes to public API,
-               schema, types, or wire/event formats? Backward-compat considered?
-            5. ARCHITECTURAL DECISIONS: Does the change make a significant,
+            3. COMPLEXITY & ABSTRACTION LEVEL: Flag concrete signals, not vibes
+               -- oversized functions/files, deep nesting, high fan-in/fan-out,
+               a new god-object, duplicated structure that should be extracted;
+               AND the reverse -- over-/under-engineering (abstraction that
+               doesn't earn its keep, or a missing seam).
+            4. CONTRACTS, BREAKING CHANGES & BLAST RADIUS: Breaking changes to
+               public API, schema, types, or wire/event formats? Are contracts
+               well-defined and versioned? Trace the change-propagation blast
+               radius -- what else must change or could break downstream?
+            5. ERROR-HANDLING & CONFIGURATION: Does it follow a consistent
+               error-handling strategy (errors propagate, never silently
+               swallowed)? Is configuration externalized rather than hardcoded?
+            6. ARCHITECTURAL DECISIONS: Does the change make a significant,
                undocumented architectural decision? Are alternatives/trade-offs
                reasonable? Flag decisions that warrant an ADR or that silently
-               reverse an established pattern.
+               reverse an established pattern or an accepted ADR.
 
             DISCIPLINE: Be read-only and high-signal -- report only issues you
-            can justify with evidence; do not invent findings to seem thorough,
-            and say so when the architecture is sound. Advisory: post findings
-            as PR comments, do NOT block.
+            can justify with evidence; do not invent findings to seem thorough.
+            Advisory: post findings as PR comments, do NOT block.
 
-            OUTPUT: findings grouped by the checklist item, each with severity
-            (BLOCKER / SHOULD-FIX / NIT) and file:line; then a short prioritized
-            REFACTOR ROADMAP (highest-leverage fixes first); then one line --
-            VERDICT: APPROVED | CHANGES REQUESTED | BLOCKED, RISK: LOW | MEDIUM
-            | HIGH.
+            OUTPUT: ALWAYS post exactly one top-level summary comment, even when
+            you find nothing -- so a clean run is visible, not silent. When there
+            are no issues, post: "✅ Architecture review: no issues found -- the
+            change is architecturally clean." Otherwise list findings grouped by
+            checklist item, each with severity (BLOCKER / SHOULD-FIX / NIT) and
+            file:line, then a short prioritized REFACTOR ROADMAP (highest-leverage
+            first). End the comment with one line -- VERDICT: APPROVED | CHANGES
+            REQUESTED | BLOCKED, RISK: LOW | MEDIUM | HIGH.
