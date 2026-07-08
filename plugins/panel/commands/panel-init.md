@@ -10,6 +10,12 @@ a target repo satisfy that premise. Set up each leg below, in order, **idempoten
 detect what already exists and skip it, never clobber. Stay repo-agnostic; read the
 target repo's own conventions.
 
+Your working directory is the TARGET repo, not this plugin. Files referred to below as
+"this plugin's `<path>`" live in the panel plugin's install directory — the directory
+that contains this command file (resolve it once, e.g. `PLUGIN_ROOT`, and read the
+template/script/gate files from there). Do not look for them relative to the target
+repo.
+
 ## Invariants (non-negotiable)
 
 - **Idempotent.** Before every step, check whether its artifact already exists (plugin
@@ -36,9 +42,11 @@ exactly what the human must do and stop.
 ### 1. Composed plugins
 Ensure panel's composed plugins are installed (they carry the heavy lifting):
 `superpowers` (brainstorming, plans, TDD, worktrees, systematic-debugging),
-`feature-dev` (the build spine), `pr-review-toolkit` (additive review lenses). If any
-are missing, print the exact `/plugin marketplace add` / `/plugin install` commands
-from panel's README and have the user run them.
+`feature-dev` (the build spine), `pr-review-toolkit` (additive review lenses). Detect
+what's installed by listing the plugins directory (each installed plugin has its own
+subdir with a `.claude-plugin/plugin.json`) or by checking whether the skills they
+provide resolve. If any are missing, print the exact `/plugin marketplace add` /
+`/plugin install` commands from panel's README and have the user run them.
 
 ### 2. Architecture-covering reviewer (REQUIRED)
 Verify at least one reviewer that reviews architecture/design, coupling, breaking
@@ -51,26 +59,51 @@ and require the user to install one of the two above before setup is considered 
 Invoke Claude Code's built-in `/install-github-app`. It installs the Claude GitHub App,
 adds its workflow, and sets `ANTHROPIC_API_KEY` so `@claude` works on PRs/issues.
 - **Interactive (default):** run it; the human completes the OAuth consent.
-- **Headless:** you cannot complete OAuth. Detect whether the App/workflow already
-  exist (`gh api /repos/{owner}/{repo}/installation` or check for the workflow file);
-  if absent, instruct the user to run `/install-github-app` interactively and continue
-  — do NOT fail the run.
+- **Headless:** you cannot complete OAuth. Detect prior setup by checking for the
+  App's workflow file under `.github/workflows/` (e.g. a `claude`/`claude-code`
+  workflow) — this is the reliable signal. Do NOT rely on
+  `gh api /repos/{owner}/{repo}/installation`: that endpoint authenticates as the App
+  (JWT) and typically 403/404s with a user token. If no workflow is found, instruct the
+  user to run `/install-github-app` interactively and continue — do NOT fail the run.
 
 ### 4. DeepSeek-side reviewer (cross-model CI)
 The CI Action runs `python3 scripts/deepseek_review.py` **inside the target repo's CI**,
 which cannot see plugin-local paths. So **vendor** both files into the target repo:
 - Copy this plugin's `templates/deepseek-review.yml` → `.github/workflows/deepseek-review.yml`.
 - Copy this plugin's `scripts/deepseek_review.py` → `scripts/deepseek_review.py`.
-Then set the API key secret: `gh secret set DEEPSEEK_API_KEY`. Offer BOTH scopes —
-**org-level** (`--org <org>`, one secret covers all repos) or **repo-level** — and skip
-if it is already set (`gh secret list`). The vendored workflow no-ops cleanly until the
-secret exists, so a missing key never breaks CI.
+  (The script is stdlib-only but shells out to the `gh` CLI at runtime — fine on
+  GitHub-hosted runners where `gh` is preinstalled; on self-hosted runners the workflow
+  must install `gh` first.)
+
+Then set the API key secret. First **check** `gh secret list` and skip if already set.
+Otherwise **obtain the value** — never call `gh secret set` with no value, it will hang
+on stdin:
+- **Interactive:** ask the user to paste the DeepSeek API key (or read it from a
+  `DEEPSEEK_API_KEY` environment variable if present), then
+  `printf '%s' "$KEY" | gh secret set DEEPSEEK_API_KEY [scope]`.
+- **Headless:** use the `DEEPSEEK_API_KEY` environment variable if present; if not,
+  skip with a note (do not fail).
+
+Offer BOTH scopes: **repo-level** (`--repo <owner>/<repo>`) or **org-level**
+(`--org <org>`). For org scope on any **public** repo you MUST pass
+`--visibility all` (or `--visibility selected --repos <list>`) — `gh` defaults org
+secrets to `private` visibility, which silently withholds the key from public repos and
+makes the DeepSeek reviewer no-op with no error. The vendored workflow itself no-ops
+cleanly until the secret exists, so a missing key never breaks CI.
 
 ### 5. Deterministic TDD gate
-Make `bin/tdd-check` reachable to the repo's CI (CI cannot see plugin-local paths
-either): vendor `bin/tdd-check` into the target repo (e.g. `bin/tdd-check`) or add a CI
-step that fetches it, and confirm it runs (`python3 bin/tdd-check --help`). Wire it into
-the repo's PR CI so a bundled-commit / broken-ancestry branch fails the gate.
+CI cannot see plugin-local paths, so vendor BOTH the checker and its workflow:
+- Copy this plugin's `bin/tdd-check` → `bin/tdd-check` in the target repo (`chmod +x`),
+  and confirm it runs: `python3 bin/tdd-check --help`.
+- Copy this plugin's `templates/tdd-gate.yml` → `.github/workflows/tdd-gate.yml`. That
+  template already checks out full history (`fetch-depth: 0`, required for ancestry) and
+  runs against the PR's ACTUAL base ref (`pull_request.base.sha`) — never a hardcoded
+  `main`, which would misfire on any repo whose default branch isn't `main` or on PRs
+  targeting a release branch.
+
+If the repo already has a `pull_request` workflow you'd rather extend, add an equivalent
+step there instead of a second workflow (never clobber the existing one). The gate must
+fail a bundled-commit / broken-ancestry branch.
 
 ### 6. Verify + report
 Print a checklist of every leg with its state — ✅ done / ⏭️ already present / ⚠️ needs
