@@ -36,15 +36,19 @@ Stay **serial** (the default) when ANY of these is true — do not fan out:
 ## Step 1 — build the file→cluster partition
 
 From the triaged fix list, map **each confirmed finding to the file(s) it will
-touch**. Then compute connected components: two findings are in the same cluster if
-they share ANY file (transitively). This is a union-find over findings keyed by
-file path.
+touch** — and when you map, include **indirect edits**: shared registration /
+manifest files that the fix will necessarily also modify (Rust `mod.rs`/`lib.rs`,
+`package.json`, `__init__.py`, lockfiles). Two findings that both touch such a file
+overlap even if their *source* files differ. Then compute connected components: two
+findings are in the same cluster if they share ANY file (transitively). This is a
+union-find over findings keyed by file path.
 
-Present the partition before doing anything:
+Present the partition before doing anything (the `Cluster` id — `A`, `B`, ... — is
+what the per-cluster agent in Step 2 is labelled with):
 
-| Cluster | Findings | Files (disjoint across clusters) |
-|---------|----------|----------------------------------|
-| A | R2, R6 | `src/store/iv_store.rs` |
+| Cluster | Findings | Files (disjoint across clusters, incl. manifests) |
+|---------|----------|---------------------------------------------------|
+| A | R2, R6 | `src/store/iv_store.rs`, `src/store/mod.rs` |
 | B | R4 | `src/api/handlers.rs` |
 | C | R7, R8 | `src/render/chart.tsx`, `src/render/legend.tsx` |
 
@@ -87,14 +91,11 @@ await parallel(clusters.map(c => () =>
 
 ## Step 3 — merge back and re-run the COMBINED gate
 
-Because clusters are file-disjoint, merging their commits onto the feature branch
-should not conflict on the source files. **Caveat:** disjoint *source* files can still
-share a manifest/registration file — Rust `mod.rs`/`lib.rs`, `package.json`,
-`__init__.py`, lockfiles — that more than one cluster edits. When you build the
-partition (Step 1), count those indirect edits too: if two clusters would both touch
-a shared manifest, they OVERLAP and must be merged into one cluster (fixed serially).
-Bring each worktree's `test:`→`impl:` commits back onto the branch, preserving
-per-cluster ancestry.
+Because Step 1 already folded shared manifests into the overlap check, the clusters
+are truly file-disjoint and merging their commits onto the feature branch should not
+conflict. Bring each worktree's `test:`→`impl:` commits back onto the branch with
+`git cherry-pick` (or rebase the cluster branch onto the feature branch), preserving
+each cluster's `test:`-before-`impl:` ancestry.
 
 Then, on the combined branch, **re-run the full gate — this is non-negotiable**:
 
