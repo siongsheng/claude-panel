@@ -97,6 +97,11 @@ conflict. Bring each worktree's `test:`→`impl:` commits back onto the branch w
 `git cherry-pick` (or rebase the cluster branch onto the feature branch), preserving
 each cluster's `test:`-before-`impl:` ancestry.
 
+**If a merge conflict occurs, stop — fail closed.** A conflict means the partition
+was wrong (an indirect/manifest file was missed and two clusters were not actually
+disjoint). Do not force the merge. Report it, fold the conflicting clusters into one,
+and re-fix them serially.
+
 Then, on the combined branch, **re-run the full gate — this is non-negotiable**:
 
 1. The repo's own test suite (discover it from AGENTS.md / CI config).
