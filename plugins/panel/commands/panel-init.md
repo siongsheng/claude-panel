@@ -71,7 +71,14 @@ adds its workflow, and sets `ANTHROPIC_API_KEY` so `@claude` works on PRs/issues
   (JWT) and typically 403/404s with a user token. If no workflow is found, instruct the
   user to run `/install-github-app` interactively and continue — do NOT fail the run.
 
-### 4. DeepSeek-side reviewer (cross-model CI)
+### 4. DeepSeek-side reviewer (cross-model CI) — OPTIONAL
+This leg is **opt-out**: cross-model review is additive, not one of panel's
+non-negotiable invariants. If the developer doesn't want to configure a second provider,
+ask once and, on decline, skip steps 4's secret setup — still vendor the Action (it
+no-ops cleanly with no key, so it's harmless and ready if they add a key later), note
+"single-provider mode" in the final checklist, and continue. The Claude-side floor
+(step 2/3) remains required.
+
 The CI Action runs `python3 scripts/deepseek_review.py` **inside the target repo's CI**,
 which cannot see plugin-local paths. So **vendor** both files into the target repo:
 - Copy this plugin's `templates/deepseek-review.yml` → `.github/workflows/deepseek-review.yml`.
