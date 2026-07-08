@@ -35,6 +35,8 @@ Panel composes these — install them too:
 
 The `parallel-clustered-fixes` skill fans the fix stage out — one **worktree-isolated** agent per disjoint file-cluster (via the Workflow tool) — but only when it pays off; small or overlapping fixes stay serial, and the combined branch must still pass `bin/tdd-check`.
 
+**After updating the plugin, re-run `/panel-init`.** The CI reviewers (Claude, DeepSeek, architecture, tdd-gate) are **vendored** into each repo's `.github/workflows/` — a plugin update refreshes the *templates*, not the copies already in your repo. Re-running `/panel-init` is idempotent (it adds newly-shipped CI reviewers and skips what's present), so it's how an existing repo picks up new checks like the architecture review. The in-session `/panel` loop, by contrast, upgrades immediately with the plugin.
+
 ## Attribution
 
 `ponytail-guard` is based on the ponytail ladder (DietrichGebert/ponytail, MIT).
