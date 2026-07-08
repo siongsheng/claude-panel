@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "claude-panel",
-  "description": "Prevention-first agentic development: a YAGNI gate before code, adversarial multi-model review, and disciplined finding-tracking — composed on top of the official feature-dev workflow.",
+  "description": "Prevention-first agentic development: a YAGNI gate before code, cross-model adversarial review, reviewer skepticism, and disciplined finding-tracking. A thin layer that composes obra/superpowers and the official feature-dev workflow rather than duplicating them.",
   "owner": {
     "name": "siongsheng",
     "email": "siongsheng@gmail.com"
