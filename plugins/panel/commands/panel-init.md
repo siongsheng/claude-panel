@@ -72,13 +72,24 @@ don't edit Anthropic's provided files.
 
 That official review does NOT do a dedicated **architecture** review, so also vendor this
 plugin's `templates/architecture-review.yml` → `.github/workflows/architecture-review.yml`.
-It runs `feature-dev`'s `code-reviewer` (architecture/design, coupling, breaking changes,
-spec compliance) via `claude-code-action`, reusing the `CLAUDE_CODE_OAUTH_TOKEN` set
-above and no-opping cleanly without it.
+This is the **universal architecture floor**: a repo-agnostic `claude-code-action` prompt
+(no plugin dependency) that **distills the stable patterns** from surveyed
+architecture-review skills — dependency-direction/hexagonal rubric, complexity thresholds
++ refactor roadmap, disciplined high-signal findings, and an ADR/decision lens. It reuses
+the `CLAUDE_CODE_OAUTH_TOKEN` set above, no-ops cleanly without it, and reviews the PR's
+`base..head` diff. The criteria are decades-stable, so the floor doesn't track any
+fast-moving (or differently-licensed) third-party skill.
+
+**Optional stack-matched upgrade (suggest, don't bundle).** Read the target repo's stack;
+if a well-maintained, permissively-licensed architecture skill matches it, SUGGEST it as
+an opt-in upgrade (the adopter installs it and accepts its license/maintenance) — e.g. a
+Java repo might add a hexagonal/dep-direction skill, a TS repo a TS-specific one. Do NOT
+auto-bundle third-party skills: they change often and their licenses vary. If nothing
+matches (or the user declines), the universal floor above still runs — architecture is
+never left unreviewed.
 
 The rule is **one workflow per DISTINCT review function, never a duplicate**: correctness
-(official `claude-code-review`) and architecture (vendored) are complementary, so both
-are warranted — do not add a workflow that repeats a function already covered. Together
+(official `claude-code-review`) and architecture (this floor) are complementary. Together
 they are the CI counterpart to the in-session Claude reviewers the `/panel` loop runs;
 either satisfies the Claude-side floor.
 
