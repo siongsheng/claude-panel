@@ -1,5 +1,5 @@
 ---
-description: Run one feature end-to-end through the review panel — YAGNI gate, plan, two-commit TDD on a branch, deterministic TDD gate, parallel cross-model review, triage, findings ledger, deferred-to-issues, then pause for merge.
+description: Run one feature end-to-end through the review panel — YAGNI gate, plan, two-commit TDD on a branch, deterministic TDD gate, parallel cross-model review, triage, fix (serial or parallel worktree-isolated clusters), findings ledger, deferred-to-issues, then pause for merge.
 ---
 
 # /panel — orchestrate one feature through the panel loop
@@ -68,10 +68,17 @@ Never trust the implementer's claim that gates pass; verify independently.
 Open a PR (body in the required five-section format: `## Why`, `## Impact to
 Stakeholders`, `## What's in this PR`, `## Notable decision`, `## Validation`). Then
 run BOTH reviewer families IN PARALLEL, each independent of the implementer:
-- **Claude-side reviewer(s):** `pr-review-toolkit`'s multi-lens review, or
-  feature-dev's `code-reviewer` agent, or superpowers'
-  `requesting-code-review` — run in a fresh context / subagent that did not write the
-  code. Apply the `adversarial-review` skill's dimensions and verdict format.
+- **Claude-side reviewer(s):** run in a fresh context / subagent that did not write
+  the code, and apply the `adversarial-review` skill's dimensions and verdict format.
+  These reviewers are NOT interchangeable for architecture — cover BOTH:
+  - **Architecture/spec (REQUIRED):** superpowers' `requesting-code-review` or
+    feature-dev's `code-reviewer` agent — these are the only ones that review
+    architecture & design, coupling/separation, breaking changes, and plan/spec
+    compliance. One of them MUST run.
+  - **Additive lenses (recommended):** `pr-review-toolkit`'s multi-lens review for its
+    specialties (type-design, silent-failure, test-gap, comment accuracy). It does
+    NOT review system architecture, so it is an *addition* to the required reviewer
+    above, never a substitute for it.
 - **Cross-model reviewer:** `scripts/deepseek_review.py <pr> --post` (path relative to
   this plugin) so a second model family (DeepSeek) cross-checks. Invoke the
   `multi-model-review` skill if this is the first run and setup is needed.
@@ -87,19 +94,29 @@ triage table before any fix. Then apply `adversarial-review`'s inherited-vs-new-
 rule: only defects this change INTRODUCED can block merge; pre-existing debt matching
 the surrounding pattern is a SHOULD FIX, not a blocker.
 
-### 7. Findings ledger
+### 7. Fix (serial by default; parallel clustered when disjoint)
+Fix the confirmed BLOCKERs from triage. Default to ONE sequential fix agent. When the
+PR came back with **many** confirmed fixes that partition into **disjoint file-clusters**,
+invoke the `parallel-clustered-fixes` skill: it gates the fan-out on a heuristic
+(numerous AND disjoint — stay serial when fixes overlap the same file, are small, or
+must be tightly reconciled), then runs one **worktree-isolated** agent per cluster (via
+the Workflow tool). The two-commit TDD cadence still holds per cluster. After merging the
+worktrees back, re-run the COMBINED gate (repo test suite + `bin/tdd-check`) on the branch
+— both must be green before review is considered resolved.
+
+### 8. Findings ledger
 Invoke the `findings-ledger` skill: maintain exactly ONE "📋 Review Findings Ledger"
 comment on the PR — a single table (ID | Finding | Source | Severity | Status), findings
 shared across reviewers deduped into one row. Update it in place; never post follow-up
 comments.
 
-### 8. Deferred → issues
+### 9. Deferred → issues
 Invoke the `deferred-to-issues` skill: every finding that is real and not fixed in this
 PR (Deferred AND Standing) becomes a tracked GitHub issue (`gh issue create`, labeled
 `deferred-review-finding`; product/design judgment gets `design-decision`). Only Fixed
 and Rejected findings go untracked. Link each issue back into the ledger row.
 
-### 9. Pause for merge
+### 10. Pause for merge
 Report the PR link and a summary of the ledger, then **STOP**. Do not merge, and do not
 start any follow-up work until the human merges or explicitly says to continue.
 

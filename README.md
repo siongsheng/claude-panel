@@ -27,8 +27,10 @@ Panel composes these — install them too:
 
 ## Use
 
-- `/panel <feature description>` — run the full loop: YAGNI gate → (superpowers/feature-dev build) → TDD gate → cross-model review → triage → ledger → pause for merge.
-- Individual skills auto-trigger by context, or invoke explicitly: `/panel:ponytail-guard`, `/panel:blocker-triage`, `/panel:adversarial-review`.
+- `/panel <feature description>` — run the full loop: YAGNI gate → (superpowers/feature-dev build) → TDD gate → cross-model review → triage → fix (serial, or **parallel clustered** when findings are numerous and file-disjoint) → ledger → pause for merge.
+- Individual skills auto-trigger by context, or invoke explicitly: `/panel:ponytail-guard`, `/panel:blocker-triage`, `/panel:adversarial-review`, `/panel:parallel-clustered-fixes`.
+
+The `parallel-clustered-fixes` skill fans the fix stage out — one **worktree-isolated** agent per disjoint file-cluster (via the Workflow tool) — but only when it pays off; small or overlapping fixes stay serial, and the combined branch must still pass `bin/tdd-check`.
 
 ## Attribution
 
