@@ -6,8 +6,10 @@ description: Cross-model-family PR review — run an independent Claude reviewer
 # Multi-Model Review
 
 A single model has blind spots that are correlated across its own runs — asking the same
-model family twice mostly re-confirms its first read. Panel reviews every PR with TWO
-independent model families so their blind spots don't overlap:
+model family twice mostly re-confirms its first read. Panel's default is to review a PR
+with TWO independent model families so their blind spots don't overlap (the cross-model
+family is additive and opt-out — a single-provider repo runs the Claude-side family
+alone, and the ledger records the skip):
 
 1. **A Claude-side reviewer** in a FRESH context (an independent subagent, or
    `pr-review-toolkit` / feature-dev's `code-reviewer`) that did NOT write the code.

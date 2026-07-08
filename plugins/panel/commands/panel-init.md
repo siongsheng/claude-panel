@@ -4,9 +4,11 @@ description: One-shot setup that wires a target repo for the full panel loop —
 
 # /panel-init — wire a repo for the panel loop
 
-You are the SUPERVISOR of a one-shot repo setup. Panel's premise is **two review
-families with different blind spots** plus a deterministic TDD gate; this command makes
-a target repo satisfy that premise. Set up each leg below, in order, **idempotently** —
+You are the SUPERVISOR of a one-shot repo setup. Panel's premise is **independent review
+with a deterministic TDD gate**, ideally cross-checked by a second model family — the
+cross-model leg is additive and opt-out (step 4), the Claude-side floor and the gate are
+not. This command makes a target repo satisfy that premise. Set up each leg below, in
+order, **idempotently** —
 detect what already exists and skip it, never clobber. Stay repo-agnostic; read the
 target repo's own conventions.
 
@@ -121,11 +123,12 @@ step there instead of a second workflow (never clobber the existing one). The ga
 fail a bundled-commit / broken-ancestry branch.
 
 ### 6. Verify + report
-Print a checklist of every leg with its state — ✅ done / ⏭️ already present / ⚠️ needs
-human action (with the exact command) / ❌ gap (e.g. no architecture reviewer). The
-setup is COMPLETE only when steps 2, 4, and 5 are ✅/⏭️; step 3 may remain ⚠️ in
-headless mode (the human finishes the OAuth). End with the one-line command to run the
-loop: `/panel <feature>`.
+Print a checklist of every leg with its state — ✅ done / ⏭️ already present /
+🚫 opted out / ⚠️ needs human action (with the exact command) / ❌ gap (e.g. no
+architecture reviewer). The setup is COMPLETE when steps 2 and 5 are ✅/⏭️ and step 4 is
+✅/⏭️/🚫 (opting out of cross-model counts as satisfied — single-provider mode is a valid
+complete outcome); step 3 may remain ⚠️ in headless mode (the human finishes the OAuth).
+End with the one-line command to run the loop: `/panel <feature>`.
 
 ## Modes
 
