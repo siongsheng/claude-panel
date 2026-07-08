@@ -64,7 +64,18 @@ and require the user to install one of the two above before setup is considered 
 
 ### 3. Claude-side reviewer — `/install-github-app`
 Invoke Claude Code's built-in `/install-github-app`. It installs the Claude GitHub App,
-adds its workflow, and sets `ANTHROPIC_API_KEY` so `@claude` works on PRs/issues.
+sets `ANTHROPIC_API_KEY`, and adds the Claude review workflow under `.github/workflows/`
+so `@claude` works on PRs/issues and Claude reviews PRs in CI.
+
+**There must be exactly ONE Claude review workflow — the one `/install-github-app`
+creates.** Do NOT vendor a second panel-specific Claude workflow; that would double up.
+To get panel's review lens in CI, EDIT the generated workflow's `prompt` in place to
+apply the `adversarial-review` dimensions (spec compliance, architectural impact, code
+quality; inherited-vs-new-debt; a single VERDICT/RISK). This is the CI counterpart to
+the in-session Claude reviewer the `/panel` loop runs — either satisfies the Claude-side
+floor. (Whichever review family the repo does NOT run in CI is covered by running the
+`/panel` loop locally.)
+
 - **Interactive (default):** run it; the human completes the OAuth consent.
 - **Headless:** you cannot complete OAuth. Detect prior setup by checking for the
   App's workflow file under `.github/workflows/` (e.g. a `claude`/`claude-code`
