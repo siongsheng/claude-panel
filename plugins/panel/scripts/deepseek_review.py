@@ -60,6 +60,11 @@ or disguised as valid states.
 - API design: unambiguous signatures and error/optional semantics, \
 invariants enforced at the type or schema level rather than by caller \
 discipline, minimal public surface.
+- Architecture: module boundaries and separation of concerns, coupling and \
+dependency direction (do dependencies point inward/toward stable code?), \
+breaking changes to public API/schema/types, and whether the change matches \
+the design/spec it claims to implement. You are the SECOND model family to \
+judge architecture -- reason it out independently, do not just defer.
 - Idempotency & retries: any operation a scheduler or retry loop can \
 re-run must be safe to re-run.
 - Test quality: tests must pin behavior with hand-computed expectations \
@@ -73,9 +78,10 @@ at trust boundaries.
 
 Structure your review as markdown with sections: Overview; Correctness \
 findings (each with file, severity Critical/Major/Minor, and a concrete \
-failure scenario); Convention adherence (against the repo's own guidance \
-files); Test coverage assessment; Suggestions (non-blocking); Verdict \
-(approve / request changes with rationale)."""
+failure scenario); Architecture findings (coupling, breaking changes, \
+dependency direction, spec/design compliance); Convention adherence (against \
+the repo's own guidance files); Test coverage assessment; Suggestions \
+(non-blocking); Verdict (approve / request changes with rationale)."""
 
 
 def read_key() -> str:
