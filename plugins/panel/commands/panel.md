@@ -68,10 +68,17 @@ Never trust the implementer's claim that gates pass; verify independently.
 Open a PR (body in the required five-section format: `## Why`, `## Impact to
 Stakeholders`, `## What's in this PR`, `## Notable decision`, `## Validation`). Then
 run BOTH reviewer families IN PARALLEL, each independent of the implementer:
-- **Claude-side reviewer(s):** `pr-review-toolkit`'s multi-lens review, or
-  feature-dev's `code-reviewer` agent, or superpowers'
-  `requesting-code-review` — run in a fresh context / subagent that did not write the
-  code. Apply the `adversarial-review` skill's dimensions and verdict format.
+- **Claude-side reviewer(s):** run in a fresh context / subagent that did not write
+  the code, and apply the `adversarial-review` skill's dimensions and verdict format.
+  These reviewers are NOT interchangeable for architecture — cover BOTH:
+  - **Architecture/spec (REQUIRED):** superpowers' `requesting-code-review` or
+    feature-dev's `code-reviewer` agent — these are the only ones that review
+    architecture & design, coupling/separation, breaking changes, and plan/spec
+    compliance. One of them MUST run.
+  - **Additive lenses (recommended):** `pr-review-toolkit`'s multi-lens review for its
+    specialties (type-design, silent-failure, test-gap, comment accuracy). It does
+    NOT review system architecture, so it is an *addition* to the required reviewer
+    above, never a substitute for it.
 - **Cross-model reviewer:** `scripts/deepseek_review.py <pr> --post` (path relative to
   this plugin) so a second model family (DeepSeek) cross-checks. Invoke the
   `multi-model-review` skill if this is the first run and setup is needed.
