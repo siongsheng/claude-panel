@@ -87,19 +87,29 @@ triage table before any fix. Then apply `adversarial-review`'s inherited-vs-new-
 rule: only defects this change INTRODUCED can block merge; pre-existing debt matching
 the surrounding pattern is a SHOULD FIX, not a blocker.
 
-### 7. Findings ledger
+### 7. Fix (serial by default; parallel clustered when disjoint)
+Fix the confirmed BLOCKERs from triage. Default to ONE sequential fix agent. When the
+PR came back with **many** confirmed fixes that partition into **disjoint file-clusters**,
+invoke the `parallel-clustered-fixes` skill: it gates the fan-out on a heuristic
+(numerous AND disjoint — stay serial when fixes overlap the same file, are small, or
+must be tightly reconciled), then runs one **worktree-isolated** agent per cluster (via
+the Workflow tool). The two-commit TDD cadence still holds per cluster. After merging the
+worktrees back, re-run the COMBINED gate (repo test suite + `bin/tdd-check`) on the branch
+— both must be green before review is considered resolved.
+
+### 8. Findings ledger
 Invoke the `findings-ledger` skill: maintain exactly ONE "📋 Review Findings Ledger"
 comment on the PR — a single table (ID | Finding | Source | Severity | Status), findings
 shared across reviewers deduped into one row. Update it in place; never post follow-up
 comments.
 
-### 8. Deferred → issues
+### 9. Deferred → issues
 Invoke the `deferred-to-issues` skill: every finding that is real and not fixed in this
 PR (Deferred AND Standing) becomes a tracked GitHub issue (`gh issue create`, labeled
 `deferred-review-finding`; product/design judgment gets `design-decision`). Only Fixed
 and Rejected findings go untracked. Link each issue back into the ledger row.
 
-### 9. Pause for merge
+### 10. Pause for merge
 Report the PR link and a summary of the ledger, then **STOP**. Do not merge, and do not
 start any follow-up work until the human merges or explicitly says to continue.
 
