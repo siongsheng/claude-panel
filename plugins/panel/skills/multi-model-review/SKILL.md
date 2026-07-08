@@ -32,12 +32,15 @@ so neither dimension rests on a single model's blind spots:
 | Dimension | Claude family | Cross-model (DeepSeek) |
 |-----------|---------------|------------------------|
 | Correctness / bugs / quality | official `claude-code-review` (`/code-review`) | ✅ DeepSeek |
-| Architecture / coupling / breaking changes / spec | `feature-dev`'s `code-reviewer` (CI: `architecture-review.yml`) | ✅ DeepSeek (architecture lens) |
+| Architecture / coupling / breaking changes / spec | universal architecture floor (CI: `architecture-review.yml`) | ✅ DeepSeek (architecture lens) |
 
 Note: the official `/code-review` does NOT do a dedicated architecture review, which is
-why the architecture lens is a distinct Claude workflow (`feature-dev` code-reviewer) —
-one workflow per distinct function, never a duplicate. In-session, the `/panel` loop runs
-the equivalent Claude reviewers directly.
+why the architecture lens is a distinct Claude workflow — one workflow per distinct
+function, never a duplicate. That workflow is a repo-agnostic `claude-code-action` prompt
+distilling the stable patterns from surveyed architecture-review skills (dep-direction/
+hexagonal rubric, complexity thresholds, ADR/decision lens, disciplined high-signal
+findings); `/panel-init` can additionally suggest a stack-matched skill as an opt-in
+upgrade. In-session, the `/panel` loop runs the equivalent Claude reviewers directly.
 
 ## The DeepSeek reviewer
 
