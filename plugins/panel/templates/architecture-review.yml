@@ -1,0 +1,57 @@
+name: Architecture review
+
+# The Claude-family ARCHITECTURE reviewer, complementary to the official
+# claude-code-review.yml (which runs /code-review = correctness/quality, NOT a
+# dedicated architecture review). Uses feature-dev's code-reviewer agent.
+#
+# PR-EVENT-GATED, not per-push: architecture rarely changes shape between
+# synchronize pushes, and an LLM review per push is real cost/latency.
+# ADVISORY: posts comments, never blocks — hard gates stay deterministic
+# (bin/tdd-check + the repo's tests/linters).
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  id-token: write
+
+concurrency:
+  group: architecture-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  architecture-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No-op cleanly until CLAUDE_CODE_OAUTH_TOKEN is set (via /install-github-app).
+    env:
+      HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+    steps:
+      - name: Skip notice
+        if: env.HAS_TOKEN != 'true'
+        run: echo "CLAUDE_CODE_OAUTH_TOKEN not set -- skipping architecture review. Run /install-github-app to set it, or run the /panel loop locally."
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
+        with:
+          fetch-depth: 0
+      - name: feature-dev architecture review
+        if: env.HAS_TOKEN == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-plugins-official.git'
+          plugins: 'feature-dev@claude-plugins-official'
+          prompt: |
+            Review pull request #${{ github.event.pull_request.number }} for
+            ARCHITECTURE, using feature-dev's code-reviewer agent. Focus on:
+            module boundaries and separation of concerns; coupling and
+            dependency direction (do dependencies point toward stable code?);
+            breaking changes to public API / schema / types; and whether the
+            change matches the design/spec it claims to implement. This is the
+            architecture lens only -- correctness is covered by the separate
+            /code-review workflow. Advisory: post findings as PR comments, do
+            NOT block. End with VERDICT (APPROVED / CHANGES REQUESTED / BLOCKED)
+            and RISK (LOW / MEDIUM / HIGH).
