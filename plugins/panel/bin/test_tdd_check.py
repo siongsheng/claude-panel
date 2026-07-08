@@ -105,7 +105,88 @@ class TestClassifyCommits(unittest.TestCase):
         self.assertTrue(rep.ok)
         self.assertEqual(rep.blockers, 0)
         kinds = [c.classification for c in rep.commits]
-        self.assertEqual(kinds, ["test-only", "impl-only"])
+        self.assertEqual(kinds, ["test", "impl"])
+
+    # ---- Regression: co-located tests (the bug this fix addresses) --------
+    def test_rust_colocated_test_commit_is_red(self):
+        """Rust #[cfg(test)] lives inside src/foo.rs -- prefix must win.
+
+        This is the exact case that made tdd-check a no-op on edge-radar M3:
+        the `test:` commit touches only a `src/*.rs` file (no `tests/` path),
+        so path-based classification called it impl and reported
+        "no test commit found". With prefix-primary classification the
+        `test:` commit is RED, the following `feat:` is GREEN, and the range
+        is clean (RED ancestor of GREEN) with no warnings.
+        """
+        commits = [
+            commit("aaa1111", "test(store): add failing bulk-upsert test",
+                   ["src/store/iv_store.rs"]),
+            commit("bbb2222", "feat(store): implement bulk upsert",
+                   ["src/store/iv_store.rs"]),
+        ]
+        rep = tc.classify_commits(commits)
+        self.assertTrue(rep.ok)
+        self.assertEqual(rep.blockers, 0)
+        self.assertEqual(rep.warnings, 0, [i for i in rep.issues])
+        self.assertEqual([c.classification for c in rep.commits],
+                         ["test", "impl"])
+        self.assertEqual([c.role for c in rep.commits], ["test", "impl"])
+        msgs = " ".join(m for _, m, _ in rep.issues).lower()
+        self.assertNotIn("no test", msgs)
+
+    def test_python_colocated_test_commit_is_red(self):
+        """Python often co-locates tests/doctests inside the module."""
+        commits = [
+            commit("aaa1111", "test: add failing case", ["src/mod.py"]),
+            commit("bbb2222", "feat: make it pass", ["src/mod.py"]),
+        ]
+        rep = tc.classify_commits(commits)
+        self.assertTrue(rep.ok)
+        self.assertEqual(rep.warnings, 0, [i for i in rep.issues])
+        self.assertEqual(rep.commits[0].classification, "test")
+        self.assertEqual(rep.commits[0].role, "test")
+
+    def test_prefix_beats_path_not_bundled(self):
+        """A test: commit touching a src/*.rs file is NOT a bundling BLOCKER.
+
+        Paths cannot reveal co-located-test bundling, so we must not raise a
+        false bundling BLOCKER just because a `test:` commit edits source.
+        """
+        commits = [
+            commit("aaa1111", "test: cover the parser", ["src/parser.rs"]),
+        ]
+        rep = tc.classify_commits(commits)
+        self.assertTrue(rep.ok)
+        self.assertEqual(rep.blockers, 0)
+        self.assertNotEqual(rep.commits[0].classification, "bundled")
+        self.assertEqual(rep.commits[0].role, "test")
+
+    def test_test_prefix_touching_no_test_code_warns(self):
+        """A test: commit touching only clearly-non-test code is a possible
+        mislabel -> SHOULD-FIX (not a hard fail)."""
+        commits = [
+            commit("aaa1111", "test: tweak", ["Makefile"]),
+        ]
+        rep = tc.classify_commits(commits)
+        self.assertTrue(rep.ok)  # warning only
+        self.assertEqual(rep.blockers, 0)
+        self.assertGreaterEqual(rep.warnings, 1)
+        self.assertIn("mislabel",
+                      " ".join(m for _, m, _ in rep.issues).lower())
+
+    def test_path_decisive_bundling_still_blocker(self):
+        """When paths ARE decisive (a clearly-test-path file AND a
+        clearly-non-test code file in one commit), bundling is still a
+        BLOCKER."""
+        commits = [
+            commit("ccc3333", "feat: bar with bundled test",
+                   ["tests/foo_test.go", "foo.go"]),
+        ]
+        rep = tc.classify_commits(commits)
+        self.assertFalse(rep.ok)
+        self.assertGreaterEqual(rep.blockers, 1)
+        self.assertEqual(rep.commits[0].classification, "bundled")
+        self.assertEqual(rep.commits[0].severity, tc.BLOCKER)
 
     def test_bundled_commit_is_blocker(self):
         commits = [
@@ -168,12 +249,32 @@ class TestClassifyCommits(unittest.TestCase):
         self.assertEqual(rep.commits[0].classification, "cosmetic")
         self.assertEqual(rep.commits[0].severity, tc.OK)
 
-    def test_multi_language_test_only_commits(self):
+    def test_multi_language_test_commits(self):
         for path in ["tests/test_x.py", "a.test.ts", "h_test.go",
                      "FooTest.java", "tests/it.rs"]:
             rep = tc.classify_commits(
                 [commit("s", "test: x", [path])])
-            self.assertEqual(rep.commits[0].classification, "test-only", path)
+            self.assertEqual(rep.commits[0].classification, "test", path)
+
+    def test_test_path_without_prefix_warns(self):
+        """Test-path files without a 'test:' prefix -> SHOULD-FIX nudge."""
+        rep = tc.classify_commits(
+            [commit("s", "add cases", ["tests/test_x.py"])])
+        self.assertTrue(rep.ok)
+        self.assertEqual(rep.commits[0].role, "test")
+        self.assertEqual(rep.commits[0].severity, tc.SHOULD_FIX)
+
+    def test_chore_touching_code_is_excluded(self):
+        """chore:/style:/docs: are non-code/cosmetic -- excluded from the
+        RED/GREEN discipline even when they touch source (e.g. rustfmt)."""
+        commits = [
+            commit("aaa1111", "chore(fmt): apply rustfmt",
+                   ["src/store/iv_store.rs", "src/store/mod.rs"]),
+        ]
+        rep = tc.classify_commits(commits)
+        self.assertTrue(rep.ok)
+        self.assertEqual(rep.commits[0].classification, "cosmetic")
+        self.assertEqual(rep.commits[0].severity, tc.OK)
 
 
 class TestIntegration(unittest.TestCase):
@@ -237,6 +338,29 @@ class TestIntegration(unittest.TestCase):
         res = self._run_check("--base", "main", "--head", "HEAD")
         self.assertNotEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("bundled", (res.stdout + res.stderr).lower())
+
+    def test_rust_colocated_passing_case(self):
+        """Real git repo, Rust co-located tests: a `test:` commit and a
+        `feat:` commit that both touch only `src/*.rs`. Must PASS and must
+        recognize the test commit as RED (not 'no test commit found')."""
+        self._init_main()
+        self._git("checkout", "-q", "-b", "feature")
+        self._write("src/store.rs",
+                    "pub fn upsert() {}\n#[cfg(test)]\nmod tests {\n"
+                    "    #[test]\n    fn it_upserts() { assert!(true); }\n}\n")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "test(store): failing upsert test")
+        self._write("src/store.rs",
+                    "pub fn upsert() { /* real */ }\n#[cfg(test)]\nmod tests {\n"
+                    "    #[test]\n    fn it_upserts() { assert!(true); }\n}\n")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "feat(store): implement upsert")
+        res = self._run_check("--base", "main", "--head", "HEAD")
+        out = res.stdout + res.stderr
+        self.assertEqual(res.returncode, 0, out)
+        self.assertNotIn("no test commit", out.lower())
+        # The RED commit is reported as a test, not impl.
+        self.assertIn("test", out.lower())
 
     def test_invalid_base_ref_errors(self):
         self._init_main()
