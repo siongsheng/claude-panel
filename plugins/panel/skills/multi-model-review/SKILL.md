@@ -24,6 +24,21 @@ listing both sources).
 This **complements** the Claude-side reviewers; it does not replace them. DeepSeek is the
 cross-check, not the sole reviewer.
 
+## Coverage: which family reviews which dimension
+
+Both **correctness** and **architecture** get a Claude-family AND a cross-model opinion —
+so neither dimension rests on a single model's blind spots:
+
+| Dimension | Claude family | Cross-model (DeepSeek) |
+|-----------|---------------|------------------------|
+| Correctness / bugs / quality | official `claude-code-review` (`/code-review`) | ✅ DeepSeek |
+| Architecture / coupling / breaking changes / spec | `feature-dev`'s `code-reviewer` (CI: `architecture-review.yml`) | ✅ DeepSeek (architecture lens) |
+
+Note: the official `/code-review` does NOT do a dedicated architecture review, which is
+why the architecture lens is a distinct Claude workflow (`feature-dev` code-reviewer) —
+one workflow per distinct function, never a duplicate. In-session, the `/panel` loop runs
+the equivalent Claude reviewers directly.
+
 ## The DeepSeek reviewer
 
 `scripts/deepseek_review.py` (stdlib-only Python) fetches the PR metadata and unified

@@ -38,7 +38,8 @@ Confirm: `gh auth status` is authenticated, the working directory is the target 
 repo, and the user has admin on the repo (secrets + App install need it). Determine the
 repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own vendored
 resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
-`templates/tdd-gate.yml`, `scripts/deepseek_review.py`, `bin/tdd-check` — so init
+`templates/architecture-review.yml`, `templates/tdd-gate.yml`,
+`scripts/deepseek_review.py`, `bin/tdd-check` — so init
 triages itself up front instead of crashing mid-run. If any precondition fails, report
 exactly what's missing / what the human must do and stop.
 
@@ -62,19 +63,24 @@ feature-dev's `code-reviewer` agent) rather than inferring from the plugin name 
 `pr-review-toolkit` ships NO architecture agent, so it does not count. If only `pr-review-toolkit` is present, this is a GAP — flag it loudly
 and require the user to install one of the two above before setup is considered done.
 
-### 3. Claude-side reviewer — `/install-github-app`
+### 3. Claude-side reviewers — `/install-github-app` (+ architecture)
 Invoke Claude Code's built-in `/install-github-app`. It installs the Claude GitHub App,
-sets `ANTHROPIC_API_KEY`, and adds the Claude review workflow under `.github/workflows/`
-so `@claude` works on PRs/issues and Claude reviews PRs in CI.
+sets `CLAUDE_CODE_OAUTH_TOKEN`, and adds two workflows under `.github/workflows/`:
+`claude.yml` (the `@claude` responder) and `claude-code-review.yml` (an automatic PR
+review running `/code-review` = **correctness/quality**). **Leave these untouched** —
+don't edit Anthropic's provided files.
 
-**There must be exactly ONE Claude review workflow — the one `/install-github-app`
-creates.** Do NOT vendor a second panel-specific Claude workflow; that would double up.
-To get panel's review lens in CI, EDIT the generated workflow's `prompt` in place to
-apply the `adversarial-review` dimensions (spec compliance, architectural impact, code
-quality; inherited-vs-new-debt; a single VERDICT/RISK). This is the CI counterpart to
-the in-session Claude reviewer the `/panel` loop runs — either satisfies the Claude-side
-floor. (Whichever review family the repo does NOT run in CI is covered by running the
-`/panel` loop locally.)
+That official review does NOT do a dedicated **architecture** review, so also vendor this
+plugin's `templates/architecture-review.yml` → `.github/workflows/architecture-review.yml`.
+It runs `feature-dev`'s `code-reviewer` (architecture/design, coupling, breaking changes,
+spec compliance) via `claude-code-action`, reusing the `CLAUDE_CODE_OAUTH_TOKEN` set
+above and no-opping cleanly without it.
+
+The rule is **one workflow per DISTINCT review function, never a duplicate**: correctness
+(official `claude-code-review`) and architecture (vendored) are complementary, so both
+are warranted — do not add a workflow that repeats a function already covered. Together
+they are the CI counterpart to the in-session Claude reviewers the `/panel` loop runs;
+either satisfies the Claude-side floor.
 
 - **Interactive (default):** run it; the human completes the OAuth consent.
 - **Headless:** you cannot complete OAuth. Detect prior setup by checking for the
