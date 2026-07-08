@@ -25,11 +25,13 @@ name: Architecture review
 # The official claude-code-review.yml runs /code-review (correctness/quality),
 # NOT architecture -- this is the complementary architecture lens.
 #
-# PR-EVENT-GATED (not per-push) + ADVISORY (posts comments, never blocks; hard
-# gates stay deterministic -- bin/tdd-check + the repo's tests/linters).
+# Runs on every push to the PR (like the other reviewers) so the LATEST code is
+# always architecture-reviewed; concurrency below cancels an in-flight run on a
+# new push to bound cost. ADVISORY (posts comments, never blocks; hard gates
+# stay deterministic -- bin/tdd-check + the repo's tests/linters).
 on:
   pull_request:
-    types: [opened, ready_for_review, reopened]
+    types: [opened, ready_for_review, reopened, synchronize]
 
 permissions:
   contents: read
