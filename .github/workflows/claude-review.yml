@@ -1,3 +1,5 @@
+# This repo's own copy of templates/claude-review.yml (byte-identical — no path
+# adjustment needed). Downstream repos get the same template via /panel-init.
 name: Claude review
 
 on:
@@ -17,9 +19,14 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # cap a hung API call from consuming runner minutes.
     # No-op cleanly until ANTHROPIC_API_KEY is set. The Claude-side review is
-    # panel's mandatory floor, but it can also be satisfied by running the
-    # /panel loop locally -- so a repo without this secret must not fail CI.
+    # panel's mandatory floor, but it can be satisfied EITHER by this CI job
+    # (with the key) OR by running the /panel loop locally -- so a repo without
+    # this secret must not fail CI. NOTE: because the skip below returns success,
+    # do NOT treat this check as the sole enforcement of the floor when no key
+    # is set (a no-op green is not a real review). Enforce the floor by running
+    # /panel locally, or by setting the key so this job actually reviews.
     env:
       HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     steps:
