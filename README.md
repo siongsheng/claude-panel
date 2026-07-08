@@ -27,6 +27,7 @@ Panel composes these — install them too:
 
 ## Use
 
+- `/panel-init` — one-shot setup that wires a repo for the loop: installs the composed plugins, guarantees an architecture-covering reviewer, runs `/install-github-app` (Claude reviewer), vendors the DeepSeek CI Action + review script, sets the API-key secrets, and verifies the `tdd-check` gate. Idempotent; interactive by default.
 - `/panel <feature description>` — run the full loop: YAGNI gate → (superpowers/feature-dev build) → TDD gate → cross-model review → triage → fix (serial, or **parallel clustered** when findings are numerous and file-disjoint) → ledger → pause for merge.
 - Individual skills auto-trigger by context, or invoke explicitly: `/panel:ponytail-guard`, `/panel:blocker-triage`, `/panel:adversarial-review`, `/panel:parallel-clustered-fixes`.
 
