@@ -60,8 +60,9 @@ Prefer having an implementer subagent do the code so the supervising context sta
 clean and can later host an independent reviewer. The implementer does not run the
 review.
 
-If a test won't pass or behavior is wrong, invoke superpowers' `systematic-debugging`
-skill — find the root cause before editing — rather than guessing at fixes.
+If a test won't pass or behavior is wrong, have the implementer invoke superpowers'
+`systematic-debugging` skill to find the root cause before editing — never guess at
+fixes.
 
 ### 4. Deterministic TDD gate
 Run `bin/tdd-check` (path relative to this plugin) against the branch. A bundled-commit
@@ -111,9 +112,7 @@ worktrees back, re-run the COMBINED gate (repo test suite + `bin/tdd-check`) on 
 — both must be green before review is considered resolved.
 
 For any finding whose root cause isn't obvious — a failing test, a regression, wrong
-behavior — invoke superpowers' `systematic-debugging` skill before editing; diagnose
-first, fix second (the same analyze-first discipline `blocker-triage` applies to
-verdicts).
+behavior — apply superpowers' `systematic-debugging` before editing, as in step 3.
 
 ### 8. Findings ledger
 Invoke the `findings-ledger` skill: maintain exactly ONE "📋 Review Findings Ledger"
