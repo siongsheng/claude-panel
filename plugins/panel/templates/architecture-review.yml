@@ -96,14 +96,12 @@ jobs:
                reverse an established pattern or an accepted ADR.
 
             DISCIPLINE: Be read-only and high-signal -- report only issues you
-            can justify with evidence; do not invent findings to seem thorough.
-            Advisory: post findings as PR comments, do NOT block.
+            can justify with evidence; do not invent findings to seem thorough,
+            and say so when the architecture is sound. Advisory: post findings
+            as PR comments, do NOT block.
 
-            OUTPUT: ALWAYS post exactly one top-level summary comment, even when
-            you find nothing -- so a clean run is visible, not silent. When there
-            are no issues, post: "✅ Architecture review: no issues found -- the
-            change is architecturally clean." Otherwise list findings grouped by
-            checklist item, each with severity (BLOCKER / SHOULD-FIX / NIT) and
-            file:line, then a short prioritized REFACTOR ROADMAP (highest-leverage
-            first). End the comment with one line -- VERDICT: APPROVED | CHANGES
-            REQUESTED | BLOCKED, RISK: LOW | MEDIUM | HIGH.
+            OUTPUT: findings grouped by the checklist item, each with severity
+            (BLOCKER / SHOULD-FIX / NIT) and file:line; then a short prioritized
+            REFACTOR ROADMAP (highest-leverage fixes first); then one line --
+            VERDICT: APPROVED | CHANGES REQUESTED | BLOCKED, RISK: LOW | MEDIUM
+            | HIGH.

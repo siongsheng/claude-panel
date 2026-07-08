@@ -9,6 +9,16 @@ Every PR carries exactly ONE ledger comment. It is the single place a human look
 see what every reviewer found and where each finding stands. The goal: the reader never
 has to cross-reference scattered review comments against fix commits and issues by hand.
 
+**Always post the ledger — even when the review is clean.** A PR with zero findings still
+gets the ledger, stating which reviewers ran and that nothing was found, e.g.:
+
+> ## 📋 Review Findings Ledger
+> ✅ **Reviewed — no issues found.** Reviewers: Claude adversarial + architecture, DeepSeek (cross-model). Gates: `bin/tdd-check` PASS.
+> _(no findings)_
+
+This way a clean review is visible confirmation ("it was reviewed and the code is clear"),
+never silence — the reader can tell "reviewed, nothing found" apart from "not reviewed."
+
 ## The one comment
 
 Post a single comment titled **📋 Review Findings Ledger** containing one table:
@@ -70,7 +80,8 @@ comments the reader must reconcile.
 2. Patch it:
    `gh api --method PATCH repos/{owner}/{repo}/issues/comments/{id} -F body=@ledger.md`
 
-Post the ledger once the first review lands; edit it in place thereafter.
+Post the ledger once review completes — including a clean "no issues found" ledger when
+there are zero findings — and edit it in place thereafter.
 
 ## Pitfalls
 
