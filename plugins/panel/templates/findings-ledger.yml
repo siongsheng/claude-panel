@@ -85,6 +85,7 @@ jobs:
 
       - name: Compose findings ledger
         if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        continue-on-error: true   # advisory: a flaky agent run must not show red
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
