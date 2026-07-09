@@ -1,0 +1,94 @@
+name: Findings ledger
+
+# Auto-posts the ONE "Review Findings Ledger" comment on a PR once ALL the
+# reviewer checks have finished. Runs a headless Claude Code session in CI
+# (claude-code-action) with the panel plugin installed, so it applies panel's
+# blocker-triage + findings-ledger skills: read every reviewer's output, triage
+# each finding (drop the ~30-40% false blockers), dedupe, and post/edit a single
+# consolidated table -- a clean "no issues found" ledger when nothing survives.
+#
+# ADVISORY: it only reports; it never fails the build. It is NOT a reviewer --
+# it consolidates the reviewers' output.
+#
+# Trigger: fires when each reviewer workflow completes, then GATES so it only
+# proceeds once NO checks are still pending -- i.e. the last reviewer to finish
+# is the one that actually writes the ledger. Earlier firings no-op.
+on:
+  workflow_run:
+    workflows: ["Claude Code Review", "Architecture review", "DeepSeek review", "TDD gate"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+  id-token: write
+
+concurrency:
+  group: findings-ledger-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    env:
+      HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      GH_TOKEN: ${{ github.token }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Skip notice (no token)
+        if: env.HAS_TOKEN != 'true'
+        run: echo "CLAUDE_CODE_OAUTH_TOKEN not set -- skipping auto findings ledger."
+
+      - name: Resolve PR + gate on all-checks-complete
+        if: env.HAS_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          PR=$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" --jq '.[0].number // empty' || true)
+          if [ -z "$PR" ]; then echo "no open PR for $HEAD_SHA; nothing to do"; echo "SKIP=1" >> "$GITHUB_ENV"; exit 0; fi
+          echo "PR=$PR" >> "$GITHUB_ENV"
+          # Proceed only when NO check is still running -- the last reviewer to
+          # finish is the one that writes the ledger; earlier firings no-op.
+          checks=$(gh pr checks "$PR" 2>/dev/null || true)
+          if printf '%s\n' "$checks" | grep -qiE '[[:space:]](pending|queued|in_progress)([[:space:]]|$)'; then
+            echo "checks still running -- deferring ledger to the final reviewer"
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          else
+            echo "all checks complete -- writing ledger for PR #$PR"
+          fi
+
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        with:
+          fetch-depth: 0
+
+      - name: Compose findings ledger
+        if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: 'https://github.com/siongsheng/claude-panel.git'
+          plugins: 'panel@claude-panel'
+          prompt: |
+            Compose the Review Findings Ledger for pull request #${{ env.PR }}
+            in ${{ env.REPO }}. All reviewer checks have completed. Use the
+            panel `blocker-triage` and `findings-ledger` skills.
+
+            1. Gather every reviewer's output on the PR via `gh`: the DeepSeek
+               comment, the Claude /code-review comments, the architecture-review
+               comment(s), and the tdd-gate result. Also read the diff
+               (base..head) for context.
+            2. TRIAGE with blocker-triage: for each raised finding decide real vs
+               false (expect ~30-40% false), set the triaged severity, and check
+               whether it is pre-existing on the base branch. Dedupe findings
+               that multiple reviewers raised into one row.
+            3. Post the SINGLE ledger via findings-ledger: exactly one comment
+               titled "📋 Review Findings Ledger" -- find an existing one by that
+               marker and EDIT it in place (never post a second). Columns:
+               ID | Finding | Source | Severity | Status. If nothing survives
+               triage, post the clean confirmation ("✅ Reviewed -- no issues
+               found") listing which reviewers ran.
+            ADVISORY ONLY: report; do not block or fail. Do not modify code.
