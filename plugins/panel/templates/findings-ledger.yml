@@ -27,6 +27,8 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  checks: read       # gh pr checks reads check-runs (the reviewer workflows)
+  statuses: read     # ...and commit statuses, for the all-checks gate
 
 concurrency:
   group: findings-ledger-${{ github.event.workflow_run.head_branch }}
