@@ -45,7 +45,7 @@ repo, and the user has admin on the repo (secrets + App install need it). Determ
 repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own vendored
 resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
 `templates/architecture-review.yml`, `templates/tdd-gate.yml`,
-`scripts/deepseek_review.py`, `bin/tdd-check` — so init
+`templates/findings-ledger.yml`, `scripts/deepseek_review.py`, `bin/tdd-check` — so init
 triages itself up front instead of crashing mid-run. If any precondition fails, report
 exactly what's missing / what the human must do and stop.
 
@@ -156,7 +156,22 @@ If the repo already has a `pull_request` workflow you'd rather extend, add an eq
 step there instead of a second workflow (never clobber the existing one). The gate must
 fail a bundled-commit / broken-ancestry branch.
 
-### 6. Verify + report
+### 6. Auto findings ledger
+Vendor this plugin's `templates/findings-ledger.yml` → `.github/workflows/findings-ledger.yml`.
+It fires on `workflow_run` completion of the reviewer workflows, gates until **all** PR
+checks are done (the last reviewer to finish writes the ledger; earlier firings no-op),
+then runs a headless `claude-code-action` session with `panel` installed to triage every
+reviewer's output and post/edit the single **📋 Review Findings Ledger** comment — a clean
+"no issues found" ledger when nothing survives triage. It reuses `CLAUDE_CODE_OAUTH_TOKEN`,
+no-ops without it, and is **advisory** (never blocks). It runs on **same-repo PRs only**
+(a fork PR must never reach the token via `workflow_run`). This makes the ledger
+automatic — it can't be missed even when no one is driving a `/panel` session.
+
+The template's `workflow_run.workflows:` list must match the reviewer workflows' exact
+`name:` values — if the repo renames or omits a reviewer, update that list, or the ledger
+won't trigger.
+
+### 7. Verify + report
 Print a checklist of every leg with its state — ✅ done / ⏭️ already present /
 🚫 opted out / ⚠️ needs human action (with the exact command) / ❌ gap (e.g. no
 architecture reviewer). The setup is COMPLETE when steps 2 and 5 are ✅/⏭️ and step 4 is

@@ -69,6 +69,23 @@ When two reviewers (say Claude and DeepSeek) raise the same finding, it is ONE r
 both listed in Source — not two rows. Deduping is what makes the table readable when a
 cross-model panel produces overlapping findings.
 
+## Cumulative — never regenerate from scratch
+
+The ledger is a living **audit trail** for the PR, not a per-run snapshot. On every
+update — including automated re-runs after new commits — FIRST read the existing ledger,
+then MERGE:
+
+- **Preserve every prior row and its ID.** Never drop a finding because a later review no
+  longer reports it — a fixed finding stays as a `✅ Fixed <sha>` row.
+- **Change only the Status** of existing rows as things resolve (`Open → ✅ Fixed`,
+  `❌ Rejected`, `📋 Deferred → #N`). Keep the ID stable.
+- **Append new findings** as new rows with the next ID.
+- A clean re-run does NOT erase history: a PR that found 8 issues and fixed them all
+  reads "8 rows, all ✅ Fixed", not "no issues found".
+
+So the ledger only ever **grows and updates in place** — it is never overwritten with the
+latest review's snapshot.
+
 ## Update in place — never post follow-ups
 
 As fixes land and issues get filed, EDIT the existing ledger comment. Do not post new
