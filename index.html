@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="claude-panel — the review panel for prevention-first development.">
+<title>claude-panel — the review panel for prevention-first development</title>
+<style>
+  :root {
+    --bg:        #eef0f2;
+    --surface:   #f108;               /* placeholder, overridden below */
+    --surface-1: #f7f8f9;
+    --surface-2: #ffffff;
+    --line:      #d3d8dd;
+    --line-soft: #e2e6ea;
+    --ink:       #14181c;
+    --ink-2:     #3d454c;
+    --ink-3:     #6b737b;
+    --accent:    #33567f;
+    --accent-ink:#24405f;
+    --pass:      #2c7a48;
+    --block:     #b23a30;
+    --advis:     #9a6a12;
+    --pass-bg:   #e4efe7;
+    --block-bg:  #f4e2e0;
+    --advis-bg:  #f2ead7;
+    --shadow:    0 1px 2px rgba(20,24,28,.05), 0 8px 24px -12px rgba(20,24,28,.14);
+
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --measure: 64ch;
+    --maxw: 68rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #0f1215;
+      --surface-1: #14181c;
+      --surface-2: #191e23;
+      --line:      #2a3138;
+      --line-soft: #232a30;
+      --ink:       #e7eaed;
+      --ink-2:     #b3bcc4;
+      --ink-3:     #838d96;
+      --accent:    #85aadd;
+      --accent-ink:#a9c4ec;
+      --pass:      #5fb87e;
+      --block:     #e07168;
+      --advis:     #d6a648;
+      --pass-bg:   #16241b;
+      --block-bg:  #2a1a18;
+      --advis-bg:  #262013;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#eef0f2; --surface-1:#f7f8f9; --surface-2:#ffffff; --line:#d3d8dd; --line-soft:#e2e6ea;
+    --ink:#14181c; --ink-2:#3d454c; --ink-3:#6b737b; --accent:#33567f; --accent-ink:#24405f;
+    --pass:#2c7a48; --block:#b23a30; --advis:#9a6a12; --pass-bg:#e4efe7; --block-bg:#f4e2e0; --advis-bg:#f2ead7;
+    --shadow:0 1px 2px rgba(20,24,28,.05), 0 8px 24px -12px rgba(20,24,28,.14);
+  }
+  :root[data-theme="dark"] {
+    --bg:#0f1215; --surface-1:#14181c; --surface-2:#191e23; --line:#2a3138; --line-soft:#232a30;
+    --ink:#e7eaed; --ink-2:#b3bcc4; --ink-3:#838d96; --accent:#85aadd; --accent-ink:#a9c4ec;
+    --pass:#5fb87e; --block:#e07168; --advis:#d6a648; --pass-bg:#16241b; --block-bg:#2a1a18; --advis-bg:#262013;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 clamp(1.1rem, 4vw, 2.5rem); }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: .72rem; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 1rem;
+    display: flex; align-items: center; gap: .6rem;
+  }
+  .eyebrow::before {
+    content: ""; width: 1.6rem; height: 2px; background: var(--accent); display: inline-block;
+  }
+
+  h1, h2, h3 { text-wrap: balance; letter-spacing: -.02em; line-height: 1.08; }
+
+  /* ---- Header ---- */
+  header { padding: clamp(3rem, 8vw, 6rem) 0 2.4rem; border-bottom: 1px solid var(--line); }
+  .brand {
+    font-family: var(--mono); font-weight: 600; font-size: .8rem; letter-spacing: .04em;
+    color: var(--ink-2); margin: 0 0 1.6rem;
+  }
+  .brand b { color: var(--accent); font-weight: 700; }
+  h1 {
+    font-size: clamp(2.3rem, 6.2vw, 4.1rem); font-weight: 800; margin: 0 0 1.1rem; max-width: 15ch;
+  }
+  .lede {
+    font-size: clamp(1.05rem, 2.3vw, 1.3rem); color: var(--ink-2); margin: 0; max-width: var(--measure);
+  }
+  .lede b { color: var(--ink); font-weight: 650; }
+
+  /* ---- Gate status strip ---- */
+  .strip {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+    background: var(--line); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden; margin-top: 2.4rem;
+  }
+  .strip .cell { background: var(--surface-2); padding: 1rem 1.15rem; }
+  .strip .k {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-3); margin: 0 0 .5rem; display: flex; align-items: center; gap: .45rem;
+  }
+  .dot { width: .5rem; height: .5rem; border-radius: 50%; flex: none; }
+  .dot.pass { background: var(--pass); } .dot.advis { background: var(--advis); } .dot.inv { background: var(--accent); }
+  .strip .v { font-family: var(--mono); font-size: .92rem; font-weight: 600; color: var(--ink); }
+  .strip .n { font-size: .82rem; color: var(--ink-3); margin: .2rem 0 0; }
+  @media (max-width: 620px) { .strip { grid-template-columns: 1fr; } }
+
+  /* ---- Sections ---- */
+  section { padding: clamp(2.6rem, 6vw, 4.2rem) 0; border-bottom: 1px solid var(--line-soft); }
+  h2 { font-size: clamp(1.5rem, 3.4vw, 2.05rem); font-weight: 750; margin: 0 0 1.4rem; }
+  .prose p { color: var(--ink-2); max-width: var(--measure); margin: 0 0 1rem; }
+  .prose p:last-child { margin-bottom: 0; }
+  .prose b { color: var(--ink); font-weight: 650; }
+  .prose code, .tag { font-family: var(--mono); }
+  .prose code {
+    font-size: .86em; background: var(--surface-1); border: 1px solid var(--line-soft);
+    padding: .05em .38em; border-radius: 5px; color: var(--accent-ink);
+  }
+
+  /* ---- The loop ---- */
+  .loop { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px;
+          background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+  .step { background: var(--surface-2); display: grid; grid-template-columns: 3.2rem 1fr auto; gap: 1rem;
+          align-items: baseline; padding: 1.05rem 1.3rem; }
+  .step .num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .95rem;
+               color: var(--ink-3); font-weight: 600; }
+  .step .body h3 { font-size: 1.02rem; font-weight: 680; margin: 0 0 .25rem; letter-spacing: -.01em; }
+  .step .body p { margin: 0; color: var(--ink-3); font-size: .92rem; max-width: 58ch; }
+  .step .body p code { font-size: .84em; }
+  .tag {
+    font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+    padding: .32em .6em; border-radius: 999px; white-space: nowrap; align-self: center;
+    border: 1px solid transparent;
+  }
+  .tag.gate  { color: var(--advis); background: var(--advis-bg); border-color: color-mix(in srgb, var(--advis) 28%, transparent); }
+  .tag.hard  { color: var(--block); background: var(--block-bg); border-color: color-mix(in srgb, var(--block) 30%, transparent); }
+  .tag.rev   { color: var(--advis); background: var(--advis-bg); border-color: color-mix(in srgb, var(--advis) 28%, transparent); }
+  .tag.inv   { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
+  .tag.pass  { color: var(--pass); background: var(--pass-bg); border-color: color-mix(in srgb, var(--pass) 30%, transparent); }
+  @media (max-width: 560px) {
+    .step { grid-template-columns: 2.4rem 1fr; }
+    .tag { grid-column: 2; justify-self: start; margin-top: .5rem; }
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 1.1rem; margin: 1.3rem 0 0; }
+  .legend span { font-family: var(--mono); font-size: .72rem; color: var(--ink-3); display: flex; align-items: center; gap: .45rem; }
+  .legend i { width: .7rem; height: .7rem; border-radius: 3px; display: inline-block; }
+
+  /* ---- Does / Doesn't ---- */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+  .card { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 1.5rem 1.5rem 1.6rem; box-shadow: var(--shadow); }
+  .card > .h { font-family: var(--mono); font-size: .74rem; letter-spacing: .12em; text-transform: uppercase;
+               display: flex; align-items: center; gap: .5rem; margin: 0 0 1.1rem; font-weight: 700; }
+  .card.does > .h { color: var(--pass); }
+  .card.dont > .h { color: var(--block); }
+  .card ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .85rem; }
+  .card li { display: grid; grid-template-columns: 1.2rem 1fr; gap: .55rem; font-size: .95rem; color: var(--ink-2); align-items: baseline; }
+  .card li b { color: var(--ink); font-weight: 640; }
+  .mark { font-family: var(--mono); font-weight: 700; line-height: 1.5; }
+  .does .mark { color: var(--pass); } .dont .mark { color: var(--block); }
+
+  /* ---- Audience ---- */
+  .who { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
+  @media (max-width: 720px) { .who { grid-template-columns: 1fr; } }
+  .who .card ul { gap: .7rem; }
+  .who .card.for > .h { color: var(--accent-ink); }
+  .who .card.not > .h { color: var(--ink-3); }
+  .who .for .mark { color: var(--accent); } .who .not .mark { color: var(--ink-3); }
+
+  /* ---- Footer ---- */
+  footer { padding: 2.6rem 0 4rem; }
+  .composes { display: flex; flex-wrap: wrap; gap: .6rem; margin: .3rem 0 1.4rem; }
+  .chip { font-family: var(--mono); font-size: .78rem; color: var(--ink-2); background: var(--surface-1);
+          border: 1px solid var(--line); border-radius: 7px; padding: .4em .7em; }
+  .chip b { color: var(--accent-ink); font-weight: 700; }
+  .foot-note { font-size: .82rem; color: var(--ink-3); max-width: var(--measure); margin: 0; }
+  .foot-note code { font-family: var(--mono); color: var(--ink-2); }
+
+  a { color: var(--accent-ink); }
+  a:focus-visible, li:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .step, .card { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <p class="brand">◆ claude<b>-panel</b></p>
+    <p class="eyebrow">Claude Code plugin · loop engineering</p>
+    <h1>Catch it before it ships.</h1>
+    <p class="lede">panel runs one feature through an <b>engineered loop</b> — gates, cross-model review, a triaged findings ledger — then <b>pauses at a green PR for you to merge</b>.</p>
+
+    <div class="strip" role="list" aria-label="Core guarantees">
+      <div class="cell" role="listitem">
+        <p class="k"><span class="dot pass"></span>Hard gate</p>
+        <p class="v">RED → GREEN</p>
+        <p class="n">Deterministic two-commit TDD. Red blocks.</p>
+      </div>
+      <div class="cell" role="listitem">
+        <p class="k"><span class="dot advis"></span>Review panel</p>
+        <p class="v">CLAUDE × DEEPSEEK</p>
+        <p class="n">Two model families. Advisory.</p>
+      </div>
+      <div class="cell" role="listitem">
+        <p class="k"><span class="dot inv"></span>Invariant</p>
+        <p class="v">HUMAN MERGES</p>
+        <p class="n">Never auto-merge.</p>
+      </div>
+    </div>
+  </header>
+
+  <section class="prose">
+    <p class="eyebrow">What it is</p>
+    <h2>A thin loop-engineering layer, not another reviewer.</h2>
+    <p>panel doesn't reinvent planning, TDD, worktrees, or debugging — it <b>composes</b> the plugins that do, and adds the one thing they lack: the <b>loop that wires them together with gates</b>.</p>
+    <p>Its value isn't a model or a prompt — it's <b>control flow</b>: what blocks, what only advises, and where the loop stops and hands back to a human.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">The loop</p>
+    <h2>One feature, end to end.</h2>
+    <ol class="loop">
+      <li class="step"><span class="num">01</span><div class="body"><h3>YAGNI gate</h3><p>Lowest rung that solves it. Shouldn't exist? Stop — that's a win.</p></div><span class="tag gate">gate</span></li>
+      <li class="step"><span class="num">02</span><div class="body"><h3>Plan</h3><p>Scoped to that rung, no more.</p></div><span class="tag">·</span></li>
+      <li class="step"><span class="num">03</span><div class="body"><h3>Two-commit TDD</h3><p>A failing <code>test:</code> commit before the <code>feat:</code> that passes it.</p></div><span class="tag pass">red → green</span></li>
+      <li class="step"><span class="num">04</span><div class="body"><h3>Deterministic gate</h3><p><code>bin/tdd-check</code>: test commit an <b>ancestor</b> of impl; no bundling.</p></div><span class="tag hard">hard gate</span></li>
+      <li class="step"><span class="num">05</span><div class="body"><h3>Review panel</h3><p>Claude + DeepSeek, both independent of the author.</p></div><span class="tag rev">advisory</span></li>
+      <li class="step"><span class="num">06</span><div class="body"><h3>Triage</h3><p>Analyze before fixing — ~30–40% of blockers are false.</p></div><span class="tag">·</span></li>
+      <li class="step"><span class="num">07</span><div class="body"><h3>Fix</h3><p>Serial; parallel worktree-isolated clusters when disjoint.</p></div><span class="tag">·</span></li>
+      <li class="step"><span class="num">08</span><div class="body"><h3>Findings ledger</h3><p>One table per PR — deduped, status-tracked, posted even when clean.</p></div><span class="tag">·</span></li>
+      <li class="step"><span class="num">09</span><div class="body"><h3>Deferred → issues</h3><p>Real-but-unfixed findings become tracked issues.</p></div><span class="tag">·</span></li>
+      <li class="step"><span class="num">10</span><div class="body"><h3>Pause</h3><p>Green PR. You read the ledger and merge.</p></div><span class="tag inv">invariant</span></li>
+    </ol>
+    <div class="legend">
+      <span><i style="background:var(--block)"></i>hard gate — blocks</span>
+      <span><i style="background:var(--advis)"></i>advisory — informs</span>
+      <span><i style="background:var(--accent)"></i>invariant — always holds</span>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Scope</p>
+    <h2>What it does — and deliberately doesn't.</h2>
+    <div class="cols">
+      <div class="card does">
+        <p class="h"><span class="dot pass"></span>Does</p>
+        <ul>
+          <li><span class="mark">+</span><span>Gate every change on <b>deterministic two-commit TDD</b>.</span></li>
+          <li><span class="mark">+</span><span>Review each PR with <b>two model families</b>.</span></li>
+          <li><span class="mark">+</span><span><b>Triage before fixing</b>; separate inherited from new debt.</span></li>
+          <li><span class="mark">+</span><span>Keep <b>one findings ledger</b> per PR, always posted.</span></li>
+          <li><span class="mark">+</span><span>Wire a repo's CI with <code>/panel-init</code>.</span></li>
+        </ul>
+      </div>
+      <div class="card dont">
+        <p class="h"><span class="dot block" style="background:var(--block)"></span>Doesn't</p>
+        <ul>
+          <li><span class="mark">−</span><span><b>Auto-merge</b> — a human always does.</span></li>
+          <li><span class="mark">−</span><span><b>Block on AI reviewers</b> — only the TDD gate and CI block.</span></li>
+          <li><span class="mark">−</span><span><b>Reinvent</b> planning, TDD, or worktrees — it composes them.</span></li>
+          <li><span class="mark">−</span><span><b>Index your whole repo</b> — it reviews the diff.</span></li>
+          <li><span class="mark">−</span><span><b>Replace your judgment</b> — it's a discipline, not an autopilot.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Audience</p>
+    <h2>Who it's for.</h2>
+    <div class="who">
+      <div class="card for">
+        <p class="h"><span class="dot inv"></span>A good fit</p>
+        <ul>
+          <li><span class="mark">→</span><span>Claude Code devs who want a <b>disciplined, prevention-first</b> PR flow.</span></li>
+          <li><span class="mark">→</span><span>Teams wanting <b>cross-model review + a deterministic TDD gate</b> in CI.</span></li>
+          <li><span class="mark">→</span><span>Anyone who wants the agent loop <b>engineered</b>, not YOLO.</span></li>
+        </ul>
+      </div>
+      <div class="card not">
+        <p class="h"><span class="dot" style="background:var(--ink-3)"></span>Not the tool if you want</p>
+        <ul>
+          <li><span class="mark">✕</span><span>Autonomous <b>auto-merging</b>, no human in the loop.</span></li>
+          <li><span class="mark">✕</span><span>Zero-ceremony hacking where <b>any gate is friction</b>.</span></li>
+          <li><span class="mark">✕</span><span>A codebase where you <b>can't or won't run tests</b>.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p class="eyebrow">Composes</p>
+    <div class="composes">
+      <span class="chip">obra/<b>superpowers</b></span>
+      <span class="chip">anthropics/<b>feature-dev</b></span>
+      <span class="chip">anthropics/<b>pr-review-toolkit</b></span>
+      <span class="chip"><b>DeepSeek</b> cross-model</span>
+    </div>
+    <p class="foot-note">Set up a repo with <code>/panel-init</code>; run a feature with <code>/panel</code>. <code>ponytail-guard</code> is based on the ponytail ladder (MIT).</p>
+  </footer>
+
+</div>
+</body>
+</html>
