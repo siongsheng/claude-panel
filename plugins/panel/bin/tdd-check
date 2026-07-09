@@ -72,8 +72,11 @@ BLOCKER = "BLOCKER"
 # a language by appending a regex here.
 # --------------------------------------------------------------------------
 TEST_PATH_PATTERNS: List[str] = [
-    # A path component named test(s)/spec(s)/__tests__ (any language)
-    r"(^|/)(tests?|specs?|__tests__|__test__)(/|$)",
+    # A path component named test(s)/__tests__ (any language). NOT spec(s):
+    # a `specs/` dir is the spec-driven-development docs convention, not tests;
+    # real spec *test* files (foo.spec.ts / foo_spec.rb) are caught by the
+    # filename patterns below.
+    r"(^|/)(tests?|__tests__|__test__)(/|$)",
     # Python:  test_foo.py
     r"(^|/)test_[^/]+\.py$",
     # Generic: foo_test.<ext>  (Go: foo_test.go, Python: foo_test.py, ...)
@@ -132,9 +135,16 @@ def _posix(path: str) -> str:
     return path.replace("\\", "/").strip()
 
 
+# Documentation/prose files are never test code, whatever their path
+# (e.g. tests/README.md, specs/roadmap.md).
+DOC_EXTENSIONS = {".md", ".markdown", ".rst", ".txt", ".adoc"}
+
+
 def is_test_file(path: str) -> bool:
-    """True if `path` looks like a test/spec file in any supported language."""
+    """True if `path` looks like a test file in any supported language."""
     p = _posix(path)
+    if p[p.rfind("."):].lower() in DOC_EXTENSIONS and "." in p.rsplit("/", 1)[-1]:
+        return False
     return any(rx.search(p) for rx in _TEST_RE)
 
 

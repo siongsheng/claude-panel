@@ -122,7 +122,7 @@ pattern matches. Current coverage:
 
 | Pattern | Matches |
 | --- | --- |
-| `(^\|/)(tests?\|specs?\|__tests__\|__test__)(/\|$)` | any `test/`, `tests/`, `spec/`, `__tests__/` directory (covers Rust `tests/*.rs`, Ruby `spec/`, etc.) |
+| `(^\|/)(tests?\|__tests__\|__test__)(/\|$)` | any `test/`, `tests/`, `__tests__/` directory (covers Rust `tests/*.rs`, etc.). NOT `spec(s)/`: a `specs/` dir is the spec-driven-development docs convention, not tests — real spec *test* files are caught by the filename rows below (`foo.spec.ts`, `foo_spec.rb`). |
 | `(^\|/)test_[^/]+\.py$` | Python `test_foo.py` |
 | `(^\|/)[^/]+_test\.[^/]+$` | Go `foo_test.go`, Python `foo_test.py`, … |
 | `(^\|/)[^/]+\.test\.[^/]+$` | JS/TS `foo.test.ts` |
@@ -130,7 +130,9 @@ pattern matches. Current coverage:
 | `(^\|/)[^/]+_spec\.[^/]+$` | Ruby `foo_spec.rb` |
 | `(^\|/)[^/]+Tests?\.(java\|kt\|kts\|cs\|scala)$` | Java/Kotlin/C#/Scala `FooTest.java`, `FooTests.kt` |
 
-To add a language, append one regex to `TEST_PATH_PATTERNS`. Cosmetic/config
+Documentation files (`.md`, `.markdown`, `.rst`, `.txt`, `.adoc`) are never
+treated as test files regardless of path (so `tests/README.md` / `specs/*.md`
+don't count). To add a language, append one regex to `TEST_PATH_PATTERNS`. Cosmetic/config
 detection is likewise a pair of constants, `COSMETIC_EXTENSIONS` (extensions)
 and `COSMETIC_NAME_HINTS` (basename substrings) — extend either.
 `COLOCATED_TEST_EXTENSIONS` (`.rs`, `.py`) lists source extensions whose files
