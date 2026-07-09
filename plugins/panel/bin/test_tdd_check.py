@@ -72,6 +72,17 @@ class TestIsTestFile(unittest.TestCase):
     def test_spec_dir(self):
         self.assertTrue(tc.is_test_file("spec/models/user_spec.rb"))
 
+    def test_specs_docs_dir_is_not_test(self):
+        # A `specs/` directory is the spec-driven-development docs convention
+        # (edge-radar/huat/dokima all use it), NOT tests. And a doc file is
+        # never a test regardless of path.
+        self.assertFalse(tc.is_test_file("specs/roadmap.md"))
+        self.assertFalse(tc.is_test_file("specs/mission.md"))
+        self.assertFalse(tc.is_test_file("tests/README.md"))
+        # real spec *test* files are still detected via the filename pattern:
+        self.assertTrue(tc.is_test_file("spec/models/user_spec.rb"))
+        self.assertTrue(tc.is_test_file("src/foo.spec.ts"))
+
 
 class TestIsCosmeticFile(unittest.TestCase):
     def test_css_and_config(self):
@@ -160,6 +171,22 @@ class TestClassifyCommits(unittest.TestCase):
         self.assertEqual(rep.blockers, 0)
         self.assertNotEqual(rep.commits[0].classification, "bundled")
         self.assertEqual(rep.commits[0].role, "test")
+
+    def test_docs_commit_touching_specs_not_bundled(self):
+        """A docs: commit touching specs/*.md + top-level docs is NOT a bundled
+        test+impl commit -- specs/ is documentation, not tests. Regression for
+        the false positive that failed edge-radar's docs-only PR."""
+        commits = [
+            commit(
+                "aaa1111",
+                "docs: sync status",
+                ["specs/roadmap.md", "CLAUDE.md", "README.md"],
+            ),
+        ]
+        rep = tc.classify_commits(commits)
+        self.assertTrue(rep.ok)
+        self.assertEqual(rep.blockers, 0)
+        self.assertNotEqual(rep.commits[0].classification, "bundled")
 
     def test_test_prefix_touching_no_test_code_warns(self):
         """A test: commit touching only clearly-non-test code is a possible
