@@ -108,10 +108,15 @@ jobs:
                false (expect ~30-40% false), set the triaged severity, and check
                whether it is pre-existing on the base branch. Dedupe findings
                that multiple reviewers raised into one row.
-            3. Post the SINGLE ledger via findings-ledger: exactly one comment
-               titled "📋 Review Findings Ledger" -- find an existing one by that
-               marker and EDIT it in place (never post a second). Columns:
-               ID | Finding | Source | Severity | Status. If nothing survives
-               triage, post the clean confirmation ("✅ Reviewed -- no issues
-               found") listing which reviewers ran.
+            3. Post the SINGLE ledger via findings-ledger, CUMULATIVELY. First
+               fetch the existing "📋 Review Findings Ledger" comment (match by
+               that marker) and MERGE into it -- do NOT regenerate from scratch:
+               preserve every prior row and its ID, change only the Status of
+               resolved findings (mark them ✅ Fixed), append new findings as new
+               rows, and NEVER drop a row a later review no longer reports (a
+               fixed finding stays as a ✅ Fixed row). EDIT that one comment in
+               place (never post a second). Columns: ID | Finding | Source |
+               Severity | Status. Only when the ledger has NEVER existed AND
+               nothing survives triage, post the clean confirmation ("✅ Reviewed
+               -- no issues found") listing which reviewers ran.
             ADVISORY ONLY: report; do not block or fail. Do not modify code.
