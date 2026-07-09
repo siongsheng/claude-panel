@@ -163,8 +163,13 @@ checks are done (the last reviewer to finish writes the ledger; earlier firings 
 then runs a headless `claude-code-action` session with `panel` installed to triage every
 reviewer's output and post/edit the single **📋 Review Findings Ledger** comment — a clean
 "no issues found" ledger when nothing survives triage. It reuses `CLAUDE_CODE_OAUTH_TOKEN`,
-no-ops without it, and is **advisory** (never blocks). This makes the ledger automatic —
-it can't be missed even when no one is driving a `/panel` session.
+no-ops without it, and is **advisory** (never blocks). It runs on **same-repo PRs only**
+(a fork PR must never reach the token via `workflow_run`). This makes the ledger
+automatic — it can't be missed even when no one is driving a `/panel` session.
+
+The template's `workflow_run.workflows:` list must match the reviewer workflows' exact
+`name:` values — if the repo renames or omits a reviewer, update that list, or the ledger
+won't trigger.
 
 ### 7. Verify + report
 Print a checklist of every leg with its state — ✅ done / ⏭️ already present /
