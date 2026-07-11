@@ -114,7 +114,8 @@ jobs:
           gh api "repos/$REPO/issues/$PR/comments?per_page=100" > .ledger-inputs/issue-comments.json
           gh api "repos/$REPO/pulls/$PR/reviews?per_page=100"   > .ledger-inputs/reviews.json
           gh api "repos/$REPO/pulls/$PR/comments?per_page=100"  > .ledger-inputs/review-comments.json
-          gh pr diff "$PR" > .ledger-inputs/diff.patch 2>/dev/null || : > .ledger-inputs/diff.patch
+          gh pr diff "$PR" > .ledger-inputs/diff.patch 2>/dev/null \
+            || { echo "::warning title=Findings ledger::gh pr diff failed -- ledger will triage without diff context."; : > .ledger-inputs/diff.patch; }
           # Existing ledger (cumulative merge): id to PATCH + body to merge into.
           # (.body // "") guards against a null comment body breaking startswith.
           MARK='## 📋 Review Findings Ledger'
@@ -156,8 +157,9 @@ jobs:
 
             Apply the panel `blocker-triage` and `findings-ledger` skills:
             1. TRIAGE every finding: real vs false (expect ~30-40% false), set the
-               triaged severity, and dedupe findings multiple reviewers raised
-               into ONE row (list all sources).
+               triaged severity, check whether it is pre-existing on the base
+               branch (only defects THIS PR introduced can block), and dedupe
+               findings multiple reviewers raised into ONE row (list all sources).
             2. MERGE cumulatively into `existing.md`: preserve every prior row and
                its ID, change only Status as findings resolve (✅ Fixed, ❌
                Rejected, 📋 Deferred → #N), append new findings with the next ID,
@@ -203,10 +205,14 @@ jobs:
             exit 0
           fi
           ID=$(cat .ledger-inputs/existing_id.txt 2>/dev/null || true)
+          # ADVISORY: a transient gh api error (403/429/network) must NOT fail the
+          # job -- surface it loudly and exit 0, honoring "never blocks".
           if [ -n "$ID" ]; then
-            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$LEDGER" >/dev/null
+            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$LEDGER" >/dev/null \
+              || { echo "::error title=Findings ledger::failed to update ledger comment $ID (advisory, not blocking)."; exit 0; }
             echo "updated existing ledger comment $ID"
           else
-            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$LEDGER" >/dev/null
+            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$LEDGER" >/dev/null \
+              || { echo "::error title=Findings ledger::failed to post ledger comment (advisory, not blocking)."; exit 0; }
             echo "posted new ledger comment on PR #$PR"
           fi
