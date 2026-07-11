@@ -102,6 +102,43 @@ jobs:
           fetch-depth: 0
           # base default branch only -- never the untrusted head ref.
 
+      # Pre-gather every reviewer input deterministically in bash so the agent
+      # does PURE judgment (read files -> triage -> write one file) instead of
+      # ~20 gh round-trips. This is the main turn/latency/cost reducer: the old
+      # gh-driven prompt ran ~39 turns; the deterministic I/O needs no model.
+      - name: Gather ledger inputs
+        if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        run: |
+          set -euo pipefail
+          mkdir -p .ledger-inputs
+          # NOTE: ?per_page=100 (no --paginate) fetches ONE JSON array = the
+          # newest 100 of each. The ledger is created early so it stays on page
+          # 1; only a PR with >100 comments could drop later reviewer text.
+          gh api "repos/$REPO/issues/$PR/comments?per_page=100" > .ledger-inputs/issue-comments.json
+          gh api "repos/$REPO/pulls/$PR/reviews?per_page=100"   > .ledger-inputs/reviews.json
+          gh api "repos/$REPO/pulls/$PR/comments?per_page=100"  > .ledger-inputs/review-comments.json
+          gh pr diff "$PR" > .ledger-inputs/diff.patch 2>/dev/null \
+            || { echo "::warning title=Findings ledger::gh pr diff failed -- ledger will triage without diff context."; : > .ledger-inputs/diff.patch; }
+          # Existing ledger (cumulative merge): id to PATCH + body to merge into.
+          # (.body // "") guards against a null comment body breaking startswith.
+          MARK='## 📋 Review Findings Ledger'
+          jq -r --arg m "$MARK" '[.[] | select((.body // "")|startswith($m))] | last | .id // empty' \
+            .ledger-inputs/issue-comments.json > .ledger-inputs/existing_id.txt
+          jq -r --arg m "$MARK" '[.[] | select((.body // "")|startswith($m))] | last | .body // ""' \
+            .ledger-inputs/issue-comments.json > .ledger-inputs/existing.md
+          # One flat markdown of every reviewer's output (excluding the ledger
+          # itself) -- the agent reads this ONE file instead of parsing JSON.
+          {
+            jq -r --arg m "$MARK" '.[] | select(((.body // "")|startswith($m))|not) | "\n### issue comment by @\(.user.login)\n\(.body)"' .ledger-inputs/issue-comments.json
+            jq -r '.[] | select(.body != null and .body != "") | "\n### review by @\(.user.login) [\(.state)]\n\(.body)"' .ledger-inputs/reviews.json
+            jq -r '.[] | "\n### inline comment by @\(.user.login) (\(.path):\(.line // .original_line // "?"))\n\(.body)"' .ledger-inputs/review-comments.json
+          } > .ledger-inputs/reviewer_outputs.md
+          echo "gathered $(jq length .ledger-inputs/issue-comments.json) issue comments; existing ledger id='$(cat .ledger-inputs/existing_id.txt)'"
+
+      # The agent does ONLY judgment: read the pre-gathered files, triage, and
+      # WRITE the merged ledger to a file. It posts nothing (next step does) and
+      # touches no gh/git -- so the task is small and bounded enough to run on
+      # Haiku with a turn cap, cutting the ~39-turn / ~4min / ~$1.21 Sonnet run.
       - name: Compose findings ledger
         if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
         continue-on-error: true   # advisory: a flaky agent run must not show red
@@ -111,36 +148,74 @@ jobs:
           github_token: ${{ github.token }}
           plugin_marketplaces: 'https://github.com/siongsheng/claude-panel.git'
           plugins: 'panel@claude-panel'
-          # WHY: claude-code-action defaults to an inline-review-comment model and
-          # withholds Bash/gh from the agent -- so the agent's attempts to POST the
-          # ledger via `gh` are denied and NOTHING is posted (observed: num_turns>0,
-          # is_error:false, permission_denials_count:5, "No buffered inline
-          # comments"). Grant exactly the tools the prompt needs: `gh`/`git` to read
-          # reviewer comments + the diff, create/PATCH the one ledger comment, and
-          # Read/Write to compose it. Without this the auto-ledger silently no-ops.
-          claude_args: '--allowed-tools "Bash(gh:*),Bash(git:*),Read,Write,Grep,Glob"'
+          claude_args: '--model claude-haiku-4-5-20251001 --max-turns 15 --allowed-tools "Read,Write,Grep,Glob"'
           prompt: |
-            Compose the Review Findings Ledger for pull request #${{ env.PR }}
-            in ${{ env.REPO }}. All reviewer checks have completed. Use the
-            panel `blocker-triage` and `findings-ledger` skills.
+            Compose the Review Findings Ledger for PR #${{ env.PR }} in ${{ env.REPO }}.
+            Every reviewer input is ALREADY gathered as files in `.ledger-inputs/`.
+            Do NOT call gh or git. Read these files:
+              - reviewer_outputs.md : every reviewer's output (DeepSeek, Claude
+                /code-review, architecture review, inline comments)
+              - diff.patch          : the PR diff, for context
+              - existing.md         : the CURRENT ledger body (empty if none yet)
 
-            1. Gather every reviewer's output on the PR via `gh`: the DeepSeek
-               comment, the Claude /code-review comments, the architecture-review
-               comment(s), and the tdd-gate result. Also read the diff
-               (base..head) for context.
-            2. TRIAGE with blocker-triage: for each raised finding decide real vs
-               false (expect ~30-40% false), set the triaged severity, and check
-               whether it is pre-existing on the base branch. Dedupe findings
-               that multiple reviewers raised into one row.
-            3. Post the SINGLE ledger via findings-ledger, CUMULATIVELY. First
-               fetch the existing "📋 Review Findings Ledger" comment (match by
-               that marker) and MERGE into it -- do NOT regenerate from scratch:
-               preserve every prior row and its ID, change only the Status of
-               resolved findings (mark them ✅ Fixed), append new findings as new
-               rows, and NEVER drop a row a later review no longer reports (a
-               fixed finding stays as a ✅ Fixed row). EDIT that one comment in
-               place (never post a second). Columns: ID | Finding | Source |
-               Severity | Status. Only when the ledger has NEVER existed AND
-               nothing survives triage, post the clean confirmation ("✅ Reviewed
-               -- no issues found") listing which reviewers ran.
-            ADVISORY ONLY: report; do not block or fail. Do not modify code.
+            Apply the panel `blocker-triage` and `findings-ledger` skills:
+            1. TRIAGE every finding: real vs false (expect ~30-40% false), set the
+               triaged severity, check whether it is pre-existing on the base
+               branch (only defects THIS PR introduced can block), and dedupe
+               findings multiple reviewers raised into ONE row (list all sources).
+            2. MERGE cumulatively into `existing.md`: preserve every prior row and
+               its ID, change only Status as findings resolve (✅ Fixed, ❌
+               Rejected, 📋 Deferred → #N), append new findings with the next ID,
+               never drop a row. If existing.md is empty AND nothing survives
+               triage, produce the clean "✅ Reviewed — no issues found" ledger
+               naming which reviewers ran.
+            3. WRITE the COMPLETE updated ledger markdown to
+               `.ledger-inputs/ledger.md`. It MUST begin with the exact line
+               `## 📋 Review Findings Ledger` and contain the table with columns:
+               ID | Finding | Source | Severity | Status.
+
+            Write ONLY that file. Post nothing (a later step posts it). Do not
+            modify code.
+
+      # Deterministic post: PATCH the existing ledger comment or POST a new one.
+      # Moving the post out of the agent makes it reliable AND makes a missing
+      # ledger.md a LOUD ::error:: instead of a silent green no-op (see #28).
+      - name: Post ledger
+        if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        run: |
+          set -euo pipefail
+          LEDGER=.ledger-inputs/ledger.md
+          if [ ! -s "$LEDGER" ]; then
+            echo "::error title=Findings ledger::agent produced no ledger.md -- ledger NOT posted (see Compose step log)."
+            exit 0   # advisory: never fail the build, but never hide it either
+          fi
+          # Tolerate an over-formatted agent: if the body is wrapped in a ```
+          # fence, strip the leading fence + leading blanks AND the matching
+          # trailing fence -- but only strip the trailing fence when a leading
+          # one was stripped, so a ledger that legitimately ENDS with a code
+          # block is left intact. Leaves the dedup marker on line 1.
+          awk '
+            BEGIN{started=0; n=0; strippedlead=0}
+            { if(!started){ if($0 ~ /^[[:space:]]*```/){ strippedlead=1; next } if($0 ~ /^[[:space:]]*$/) next; started=1 }
+              buf[++n]=$0 }
+            END{ if(strippedlead && n>0 && buf[n] ~ /^[[:space:]]*```[[:space:]]*$/) n--; for(i=1;i<=n;i++) print buf[i] }
+          ' "$LEDGER" > "$LEDGER.clean" && mv "$LEDGER.clean" "$LEDGER"
+          # The dedup marker MUST be line 1, or the NEXT run's gather can't find
+          # this comment and would POST a duplicate ledger every run. Fail loud
+          # (visible ::error::) rather than silently duplicating.
+          if ! head -1 "$LEDGER" | grep -qF '## 📋 Review Findings Ledger'; then
+            echo "::error title=Findings ledger::ledger.md has no '## 📋 Review Findings Ledger' marker on line 1 -- NOT posting (would duplicate next run)."
+            exit 0
+          fi
+          ID=$(cat .ledger-inputs/existing_id.txt 2>/dev/null || true)
+          # ADVISORY: a transient gh api error (403/429/network) must NOT fail the
+          # job -- surface it loudly and exit 0, honoring "never blocks".
+          if [ -n "$ID" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$LEDGER" >/dev/null \
+              || { echo "::error title=Findings ledger::failed to update ledger comment $ID (advisory, not blocking)."; exit 0; }
+            echo "updated existing ledger comment $ID"
+          else
+            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$LEDGER" >/dev/null \
+              || { echo "::error title=Findings ledger::failed to post ledger comment (advisory, not blocking)."; exit 0; }
+            echo "posted new ledger comment on PR #$PR"
+          fi
