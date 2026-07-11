@@ -45,7 +45,8 @@ repo, and the user has admin on the repo (secrets + App install need it). Determ
 repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own vendored
 resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
 `templates/architecture-review.yml`, `templates/tdd-gate.yml`,
-`templates/findings-ledger.yml`, `scripts/deepseek_review.py`, `bin/tdd-check` — so init
+`templates/findings-ledger.yml`, `scripts/deepseek_review.py`, `bin/tdd-check`,
+`bin/test_tdd_check.py` — so init
 triages itself up front instead of crashing mid-run. If any precondition fails, report
 exactly what's missing / what the human must do and stop.
 
@@ -143,10 +144,17 @@ makes the DeepSeek reviewer no-op with no error. The vendored workflow itself no
 cleanly until the secret exists, so a missing key never breaks CI.
 
 ### 5. Deterministic TDD gate
-CI cannot see plugin-local paths, so vendor BOTH the checker and its workflow:
+CI cannot see plugin-local paths, so vendor the checker, ITS TESTS, and its workflow:
 - Copy this plugin's `bin/tdd-check` → `bin/tdd-check` in the target repo (`chmod +x`),
   and confirm it runs: `python3 bin/tdd-check --help`.
-- Copy this plugin's `templates/tdd-gate.yml` → `.github/workflows/tdd-gate.yml`. That
+- Copy this plugin's `bin/test_tdd_check.py` → `bin/test_tdd_check.py`, and confirm the
+  suite passes in-place: `python3 bin/test_tdd_check.py`. A hard merge-gate must not be
+  a black box in the repo it gates — vendoring the tests makes it verifiable where it's
+  deployed, and the gate workflow self-tests on every run (below).
+- Copy this plugin's `templates/tdd-gate.yml` → `.github/workflows/tdd-gate.yml`. It
+  now runs the vendored `bin/test_tdd_check.py` as a self-test step before the gate
+  check (guarded on the file existing, so a repo that vendored `tdd-check` before this
+  step picks up the self-test on re-run). That
   template already checks out full history (`fetch-depth: 0`, required for ancestry) and
   runs against the PR's ACTUAL base ref (`pull_request.base.sha`) — never a hardcoded
   `main`, which would misfire on any repo whose default branch isn't `main` or on PRs
