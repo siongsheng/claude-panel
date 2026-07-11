@@ -29,13 +29,21 @@ name: Architecture review
 # always architecture-reviewed; concurrency below cancels an in-flight run on a
 # new push to bound cost. ADVISORY (posts comments, never blocks; hard gates
 # stay deterministic -- bin/tdd-check + the repo's tests/linters).
+#
+# POSTING: the agent COMPOSES its review to a file; a deterministic bash step
+# POSTS it as ONE sticky comment (edit-in-place). claude-code-action's own
+# posting model classifies INLINE comments and posts nothing for a clean/grouped
+# review -- so relying on it made this reviewer a silent no-op. Composing to a
+# file + posting in bash guarantees the review is ALWAYS visible (even when
+# clean) and a run that produces nothing is a loud ::error::, never a green
+# no-op.
 on:
   pull_request:
     types: [opened, ready_for_review, reopened, synchronize]
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write   # post/update the ONE sticky architecture-review comment
   issues: read
   id-token: write
 
@@ -50,32 +58,56 @@ jobs:
     # No-op cleanly until CLAUDE_CODE_OAUTH_TOKEN is set (via /install-github-app).
     env:
       HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      # STICKY MARKER (load-bearing): this string must stay byte-identical in THREE
+      # places -- this env var, the prompt's mandated first line of arch-review.md,
+      # and the Post step's grep/jq lookup. Change one without the others and the
+      # sticky-edit silently breaks into duplicate comments.
+      MARK: '## 🏛️ Architecture Review'
     steps:
       - name: Skip notice
         if: env.HAS_TOKEN != 'true'
         run: echo "CLAUDE_CODE_OAUTH_TOKEN not set -- skipping architecture review. Run /install-github-app to set it, or run the /panel loop locally."
+
       - uses: actions/checkout@v4
         if: env.HAS_TOKEN == 'true'
         with:
           fetch-depth: 0
-      - name: Architecture review
+
+      # Pre-gather the diff so the agent reads a file instead of shelling out; it
+      # still uses Read/Grep/Glob on the checkout to inspect the WIDER codebase
+      # (coupling, dependency direction, blast radius).
+      - name: Gather diff
         if: env.HAS_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p .arch-review
+          if ! gh pr diff "$PR" > .arch-review/diff.patch 2>/dev/null; then
+            echo "::warning title=Architecture review::gh pr diff failed -- reviewing an EMPTY diff (check gh/token)."
+            : > .arch-review/diff.patch
+          fi
+          echo "diff bytes: $(wc -c < .arch-review/diff.patch)"
+
+      # The agent ANALYZES and WRITES its review to a file; it posts nothing (the
+      # next step does). Deep-reasoning work -- keep the default model, NOT Haiku
+      # (unlike the findings-ledger's mechanical compose step).
+      - name: Compose architecture review
+        if: env.HAS_TOKEN == 'true'
+        continue-on-error: true   # advisory: a flaky agent run must not show red
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Without this the agent's tool calls are denied in CI and it posts
-          # nothing (silent no-op, ~9 permission denials). Grant the tools the
-          # prompt uses: `gh`/`git` to read the diff + post the review comment,
-          # and Read/Grep/Glob to inspect files beyond the diff for context.
-          claude_args: '--allowed-tools "Bash(gh:*),Bash(git:*),Read,Grep,Glob"'
+          github_token: ${{ github.token }}   # explicit token for the action's own GitHub API ops
+          claude_args: '--allowed-tools "Read,Write,Grep,Glob"'
           prompt: |
-            You are an ARCHITECTURE reviewer for pull request
-            #${{ github.event.pull_request.number }}. Correctness/quality is
-            covered by the separate /code-review workflow -- do NOT duplicate it.
+            You are an ARCHITECTURE reviewer for PR #${{ env.PR }}.
+            Correctness/quality is covered by the separate /code-review workflow
+            -- do NOT duplicate it.
 
-            SCOPE: Review the changed commits
-            ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
-            (a CI checkout has no unstaged changes, so diff against the base).
+            The PR diff is in `.arch-review/diff.patch`. Read it, and use
+            Read/Grep/Glob on the repo to inspect the WIDER codebase for context.
             Judge ONLY what THIS change introduces; list pre-existing debt
             separately and never block on it.
 
@@ -105,13 +137,61 @@ jobs:
                reasonable? Flag decisions that warrant an ADR or that silently
                reverse an established pattern or an accepted ADR.
 
-            DISCIPLINE: Be read-only and high-signal -- report only issues you
-            can justify with evidence; do not invent findings to seem thorough,
-            and say so when the architecture is sound. Advisory: post findings
-            as PR comments, do NOT block.
+            DISCIPLINE: read-only and high-signal -- report only issues you can
+            justify with evidence; do not invent findings to seem thorough, and
+            say so plainly when the architecture is sound.
 
-            OUTPUT: findings grouped by the checklist item, each with severity
-            (BLOCKER / SHOULD-FIX / NIT) and file:line; then a short prioritized
-            REFACTOR ROADMAP (highest-leverage fixes first); then one line --
+            WRITE your review to `.arch-review/arch-review.md` -- post nothing, a
+            later step posts it. The file MUST BEGIN with this EXACT line:
+            ## 🏛️ Architecture Review
+            Then: findings grouped by checklist item, each with severity
+            (BLOCKER / SHOULD-FIX / NIT) and file:line; a short prioritized
+            REFACTOR ROADMAP (highest-leverage first); and a final line --
             VERDICT: APPROVED | CHANGES REQUESTED | BLOCKED, RISK: LOW | MEDIUM
-            | HIGH.
+            | HIGH. If the architecture is sound, STILL write the file: state
+            "No architectural issues found." with VERDICT: APPROVED. Do not
+            modify code.
+
+      # Deterministic post of ONE sticky architecture-review comment (edit in
+      # place, else create). ALWAYS posts -- a clean review stays visible, not
+      # silent -- and a missing/malformed file is a loud ::error::, never a green
+      # no-op.
+      - name: Post architecture review
+        if: env.HAS_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          REVIEW=.arch-review/arch-review.md
+          if [ ! -s "$REVIEW" ]; then
+            echo "::error title=Architecture review::agent produced no review file -- nothing posted (see Compose step log)."
+            exit 0   # advisory: never fail the build, but never hide it either
+          fi
+          # Tolerate an over-formatted agent: if the body is wrapped in a ```
+          # fence, strip the leading fence + leading blanks AND the matching
+          # trailing fence -- but only strip the trailing fence when a leading
+          # one was stripped, so a review that legitimately ENDS with a code
+          # block is left intact. Leaves the sticky marker on line 1.
+          awk '
+            BEGIN{started=0; n=0; strippedlead=0}
+            { if(!started){ if($0 ~ /^[[:space:]]*```/){ strippedlead=1; next } if($0 ~ /^[[:space:]]*$/) next; started=1 }
+              buf[++n]=$0 }
+            END{ if(strippedlead && n>0 && buf[n] ~ /^[[:space:]]*```[[:space:]]*$/) n--; for(i=1;i<=n;i++) print buf[i] }
+          ' "$REVIEW" > "$REVIEW.clean" && mv "$REVIEW.clean" "$REVIEW"
+          # The sticky marker MUST be line 1, or the next run can't find this
+          # comment and would POST a duplicate every run -- fail loud instead.
+          if ! head -1 "$REVIEW" | grep -qF "$MARK"; then
+            echo "::error title=Architecture review::review file missing '$MARK' on line 1 -- NOT posting (would duplicate next run)."
+            exit 0
+          fi
+          ID=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" 2>/dev/null \
+                | jq -r --arg m "$MARK" '[.[] | select((.body // "")|startswith($m))] | last | .id // empty' || true)
+          # ADVISORY: a transient gh api error (403/429/network) must NOT fail the
+          # job -- surface it loudly and exit 0, honoring "never blocks".
+          if [ -n "$ID" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$REVIEW" >/dev/null \
+              || { echo "::error title=Architecture review::failed to update comment $ID (advisory, not blocking)."; exit 0; }
+            echo "updated architecture-review comment $ID"
+          else
+            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$REVIEW" >/dev/null \
+              || { echo "::error title=Architecture review::failed to post comment (advisory, not blocking)."; exit 0; }
+            echo "posted new architecture-review comment on PR #$PR"
+          fi
