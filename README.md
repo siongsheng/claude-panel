@@ -37,6 +37,14 @@ The `parallel-clustered-fixes` skill fans the fix stage out — one **worktree-i
 
 **After updating the plugin, re-run `/panel-init`.** The CI reviewers (Claude, DeepSeek, architecture, tdd-gate) are **vendored** into each repo's `.github/workflows/` — a plugin update refreshes the *templates*, not the copies already in your repo. Re-running `/panel-init` is idempotent (it adds newly-shipped CI reviewers and skips what's present), so it's how an existing repo picks up new checks like the architecture review. The in-session `/panel` loop, by contrast, upgrades immediately with the plugin.
 
+## In CI, automatically
+
+Once wired, the panel runs on every PR without anyone driving a `/panel` session:
+
+- **Reviewers post their own findings.** The architecture reviewer edits **one sticky comment** (posting a clean "no issues found" when sound, so a silent reviewer is never mistaken for a clean one), and DeepSeek posts its cross-model review.
+- **The findings-ledger posts itself** once all reviewers finish — a single triaged, cumulative table that merges across re-runs. It composes on a small model and posts deterministically, so it stays cheap.
+- **Advisory, never blocking.** Reviewer/ledger steps surface problems loudly (`::error::`/`::warning::`) but never fail the build; the only hard gate is the deterministic `bin/tdd-check`.
+
 ## Attribution
 
 `ponytail-guard` is based on the ponytail ladder (DietrichGebert/ponytail, MIT).
