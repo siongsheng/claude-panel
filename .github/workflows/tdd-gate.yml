@@ -28,6 +28,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # Self-test: prove the checker actually works in CI before trusting it as a
+      # gate. (Dogfood copy — the test file always lives here, so no guard.)
+      - name: Self-test tdd-check
+        run: python3 plugins/panel/bin/test_tdd_check.py
       # Run against the PR's ACTUAL base ref, never a hardcoded `main`.
       - name: Run tdd-check
         run: >-
