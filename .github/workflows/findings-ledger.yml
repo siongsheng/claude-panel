@@ -95,6 +95,11 @@ jobs:
           github_token: ${{ github.token }}
           plugin_marketplaces: 'https://github.com/siongsheng/claude-panel.git'
           plugins: 'panel@claude-panel'
+          # Without this the agent's gh calls are denied in CI, so it gathers
+          # nothing and posts no ledger (the step still goes green via
+          # continue-on-error). Allow the gh the prompt uses.
+          claude_args: |
+            --allowedTools "Bash(gh:*),Bash(git:*)"
           prompt: |
             Compose the Review Findings Ledger for pull request #${{ env.PR }}
             in ${{ env.REPO }}. All reviewer checks have completed. Use the
