@@ -108,20 +108,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .ledger-inputs
+          # NOTE: ?per_page=100 (no --paginate) fetches ONE JSON array = the
+          # newest 100 of each. The ledger is created early so it stays on page
+          # 1; only a PR with >100 comments could drop later reviewer text.
           gh api "repos/$REPO/issues/$PR/comments?per_page=100" > .ledger-inputs/issue-comments.json
           gh api "repos/$REPO/pulls/$PR/reviews?per_page=100"   > .ledger-inputs/reviews.json
           gh api "repos/$REPO/pulls/$PR/comments?per_page=100"  > .ledger-inputs/review-comments.json
           gh pr diff "$PR" > .ledger-inputs/diff.patch 2>/dev/null || : > .ledger-inputs/diff.patch
           # Existing ledger (cumulative merge): id to PATCH + body to merge into.
+          # (.body // "") guards against a null comment body breaking startswith.
           MARK='## 📋 Review Findings Ledger'
-          jq -r --arg m "$MARK" '[.[] | select(.body|startswith($m))] | last | .id // empty' \
+          jq -r --arg m "$MARK" '[.[] | select((.body // "")|startswith($m))] | last | .id // empty' \
             .ledger-inputs/issue-comments.json > .ledger-inputs/existing_id.txt
-          jq -r --arg m "$MARK" '[.[] | select(.body|startswith($m))] | last | .body // ""' \
+          jq -r --arg m "$MARK" '[.[] | select((.body // "")|startswith($m))] | last | .body // ""' \
             .ledger-inputs/issue-comments.json > .ledger-inputs/existing.md
           # One flat markdown of every reviewer's output (excluding the ledger
           # itself) -- the agent reads this ONE file instead of parsing JSON.
           {
-            jq -r --arg m "$MARK" '.[] | select((.body|startswith($m))|not) | "\n### issue comment by @\(.user.login)\n\(.body)"' .ledger-inputs/issue-comments.json
+            jq -r --arg m "$MARK" '.[] | select(((.body // "")|startswith($m))|not) | "\n### issue comment by @\(.user.login)\n\(.body)"' .ledger-inputs/issue-comments.json
             jq -r '.[] | select(.body != null and .body != "") | "\n### review by @\(.user.login) [\(.state)]\n\(.body)"' .ledger-inputs/reviews.json
             jq -r '.[] | "\n### inline comment by @\(.user.login) (\(.path):\(.line // .original_line // "?"))\n\(.body)"' .ledger-inputs/review-comments.json
           } > .ledger-inputs/reviewer_outputs.md
@@ -175,15 +179,31 @@ jobs:
         if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
         run: |
           set -euo pipefail
-          if [ ! -s .ledger-inputs/ledger.md ]; then
+          LEDGER=.ledger-inputs/ledger.md
+          if [ ! -s "$LEDGER" ]; then
             echo "::error title=Findings ledger::agent produced no ledger.md -- ledger NOT posted (see Compose step log)."
             exit 0   # advisory: never fail the build, but never hide it either
           fi
+          # Tolerate an over-formatted agent: strip a leading/trailing ``` fence
+          # and leading blank lines so the dedup marker can be line 1.
+          awk '
+            BEGIN{started=0; n=0}
+            { if(!started){ if($0 ~ /^[[:space:]]*```/) next; if($0 ~ /^[[:space:]]*$/) next; started=1 }
+              buf[++n]=$0 }
+            END{ if(n>0 && buf[n] ~ /^[[:space:]]*```[[:space:]]*$/) n--; for(i=1;i<=n;i++) print buf[i] }
+          ' "$LEDGER" > "$LEDGER.clean" && mv "$LEDGER.clean" "$LEDGER"
+          # The dedup marker MUST be line 1, or the NEXT run's gather can't find
+          # this comment and would POST a duplicate ledger every run. Fail loud
+          # (visible ::error::) rather than silently duplicating.
+          if ! head -1 "$LEDGER" | grep -qF '## 📋 Review Findings Ledger'; then
+            echo "::error title=Findings ledger::ledger.md has no '## 📋 Review Findings Ledger' marker on line 1 -- NOT posting (would duplicate next run)."
+            exit 0
+          fi
           ID=$(cat .ledger-inputs/existing_id.txt 2>/dev/null || true)
           if [ -n "$ID" ]; then
-            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@.ledger-inputs/ledger.md >/dev/null
+            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$LEDGER" >/dev/null
             echo "updated existing ledger comment $ID"
           else
-            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@.ledger-inputs/ledger.md >/dev/null
+            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$LEDGER" >/dev/null
             echo "posted new ledger comment on PR #$PR"
           fi
