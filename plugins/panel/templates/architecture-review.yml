@@ -90,7 +90,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}   # explicit token for the action's own GitHub API ops
-          claude_args: '--allowed-tools "Read,Grep,Glob"'
+          claude_args: '--allowed-tools "Read,Write,Grep,Glob"'
           prompt: |
             You are an ARCHITECTURE reviewer for PR #${{ env.PR }}.
             Correctness/quality is covered by the separate /code-review workflow
@@ -155,13 +155,16 @@ jobs:
             echo "::error title=Architecture review::agent produced no review file -- nothing posted (see Compose step log)."
             exit 0   # advisory: never fail the build, but never hide it either
           fi
-          # Tolerate an over-formatted agent: strip a leading/trailing ``` fence
-          # and leading blank lines so the sticky marker can be line 1.
+          # Tolerate an over-formatted agent: if the body is wrapped in a ```
+          # fence, strip the leading fence + leading blanks AND the matching
+          # trailing fence -- but only strip the trailing fence when a leading
+          # one was stripped, so a review that legitimately ENDS with a code
+          # block is left intact. Leaves the sticky marker on line 1.
           awk '
-            BEGIN{started=0; n=0}
-            { if(!started){ if($0 ~ /^[[:space:]]*```/) next; if($0 ~ /^[[:space:]]*$/) next; started=1 }
+            BEGIN{started=0; n=0; strippedlead=0}
+            { if(!started){ if($0 ~ /^[[:space:]]*```/){ strippedlead=1; next } if($0 ~ /^[[:space:]]*$/) next; started=1 }
               buf[++n]=$0 }
-            END{ if(n>0 && buf[n] ~ /^[[:space:]]*```[[:space:]]*$/) n--; for(i=1;i<=n;i++) print buf[i] }
+            END{ if(strippedlead && n>0 && buf[n] ~ /^[[:space:]]*```[[:space:]]*$/) n--; for(i=1;i<=n;i++) print buf[i] }
           ' "$REVIEW" > "$REVIEW.clean" && mv "$REVIEW.clean" "$REVIEW"
           # The sticky marker MUST be line 1, or the next run can't find this
           # comment and would POST a duplicate every run -- fail loud instead.
