@@ -64,10 +64,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Without this the agent's tool calls are denied in CI and it posts
-          # nothing (silent no-op). Allow the gh/git the prompt uses to read the
-          # diff and post the review comment.
-          claude_args: |
-            --allowedTools "Bash(gh:*),Bash(git:*)"
+          # nothing (silent no-op, ~9 permission denials). Grant the tools the
+          # prompt uses: `gh`/`git` to read the diff + post the review comment,
+          # and Read/Grep/Glob to inspect files beyond the diff for context.
+          claude_args: '--allowed-tools "Bash(gh:*),Bash(git:*),Read,Grep,Glob"'
           prompt: |
             You are an ARCHITECTURE reviewer for pull request
             #${{ github.event.pull_request.number }}. Correctness/quality is
