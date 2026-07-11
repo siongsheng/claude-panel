@@ -19,11 +19,15 @@ name: Findings ledger
 # the head ref, so no untrusted code is executed.)
 #
 # EXACTLY-ONCE: fires on each reviewer's completion, then WAITS (bounded) until
-# no check is still running. concurrency cancels an in-flight waiter when a
-# later reviewer finishes, so the LAST reviewer to complete is the one that
-# writes the ledger -- no self-skip race, no double-post.
+# none of the REVIEWER checks (below) are still running -- other repo checks are
+# ignored, so an unrelated pending check can't stall the ledger. concurrency
+# cancels an in-flight waiter when a later reviewer finishes, so the LAST
+# reviewer to complete writes the ledger -- no self-skip race, no double-post.
 on:
   workflow_run:
+    # NAME CONTRACT: each entry MUST exactly match a reviewer workflow's `name:`.
+    # These are also the names the waiter filters on (REVIEWERS below). Rename a
+    # reviewer without updating BOTH places and the ledger silently stops firing.
     workflows: ["Claude Code Review", "Architecture review", "DeepSeek review", "TDD gate"]
     types: [completed]
 
@@ -34,7 +38,9 @@ permissions:
   statuses: read     # ...and commit statuses, for the all-checks gate
 
 concurrency:
-  group: findings-ledger-${{ github.event.workflow_run.head_branch }}
+  # Key by PR when resolvable (same-repo PRs populate pull_requests), else the
+  # branch -- so two PRs from one branch don't cancel each other's ledger.
+  group: findings-ledger-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
@@ -50,12 +56,14 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       REPO: ${{ github.repository }}
+      # Must match the `workflows:` list above (the reviewer workflow names).
+      REVIEWERS: 'Claude Code Review|Architecture review|DeepSeek review|TDD gate'
     steps:
       - name: Skip notice (no token)
         if: env.HAS_TOKEN != 'true'
         run: echo "CLAUDE_CODE_OAUTH_TOKEN not set -- skipping auto findings ledger."
 
-      - name: Resolve PR + wait until all checks complete
+      - name: Resolve PR + wait until reviewer checks complete
         if: env.HAS_TOKEN == 'true'
         run: |
           set -euo pipefail
@@ -65,20 +73,24 @@ jobs:
             echo "no open PR for $HEAD_SHA; nothing to do"; echo "SKIP=1" >> "$GITHUB_ENV"; exit 0
           fi
           echo "PR=$PR" >> "$GITHUB_ENV"
-          # Wait (bounded) until no check is still running. `gh pr checks` prints
-          # the bucket `pending` for queued/in-progress checks. concurrency
-          # (cancel-in-progress) means a newer reviewer's completion supersedes
-          # this waiter -- so the LAST reviewer to finish proceeds. This also
-          # absorbs the triggering reviewer's own status-propagation lag, so it
-          # never self-skips.
+          # Wait (bounded) until none of the REVIEWER checks are still pending.
+          # Filter by the `workflow` field so unrelated repo checks never stall
+          # us. concurrency (cancel-in-progress) supersedes this waiter when a
+          # later reviewer finishes, so the LAST reviewer proceeds; the loop also
+          # absorbs the triggering reviewer's own status-propagation lag.
           for i in $(seq 1 24); do
-            checks=$(gh pr checks "$PR" 2>/dev/null || true)
-            if ! printf '%s\n' "$checks" | grep -qiE '[[:space:]]pending([[:space:]]|$)'; then
-              echo "all checks complete -- writing ledger for PR #$PR"; exit 0
+            pending=$(gh pr checks "$PR" --json workflow,bucket 2>/dev/null \
+              | jq --arg r "$REVIEWERS" \
+                  '[.[] | select(.workflow|test("^(" + $r + ")$")) | select(.bucket=="pending")] | length' \
+              2>/dev/null || echo 1)
+            pending=${pending:-1}
+            if [ "$pending" = "0" ]; then
+              echo "all reviewer checks complete -- writing ledger for PR #$PR"; exit 0
             fi
-            echo "checks still running (poll $i)…"; sleep 15
+            echo "reviewer checks still running: $pending (poll $i)…"; sleep 15
           done
-          echo "timed out waiting for checks; deferring"; echo "SKIP=1" >> "$GITHUB_ENV"
+          echo "::notice title=Findings ledger::Timed out waiting for reviewer checks on PR #$PR; ledger not posted this run."
+          echo "SKIP=1" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
         if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
@@ -95,11 +107,14 @@ jobs:
           github_token: ${{ github.token }}
           plugin_marketplaces: 'https://github.com/siongsheng/claude-panel.git'
           plugins: 'panel@claude-panel'
-          # Without this the agent's gh calls are denied in CI, so it gathers
-          # nothing and posts no ledger (the step still goes green via
-          # continue-on-error). Allow the gh the prompt uses.
-          claude_args: |
-            --allowedTools "Bash(gh:*),Bash(git:*)"
+          # WHY: claude-code-action defaults to an inline-review-comment model and
+          # withholds Bash/gh from the agent -- so the agent's attempts to POST the
+          # ledger via `gh` are denied and NOTHING is posted (observed: num_turns>0,
+          # is_error:false, permission_denials_count:5, "No buffered inline
+          # comments"). Grant exactly the tools the prompt needs: `gh`/`git` to read
+          # reviewer comments + the diff, create/PATCH the one ledger comment, and
+          # Read/Write to compose it. Without this the auto-ledger silently no-ops.
+          claude_args: '--allowed-tools "Bash(gh:*),Bash(git:*),Read,Write,Grep,Glob"'
           prompt: |
             Compose the Review Findings Ledger for pull request #${{ env.PR }}
             in ${{ env.REPO }}. All reviewer checks have completed. Use the
