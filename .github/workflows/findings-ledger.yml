@@ -34,8 +34,9 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  checks: read       # gh pr checks reads check-runs (the reviewer workflows)
-  statuses: read     # ...and commit statuses, for the all-checks gate
+  actions: read      # read reviewer workflow-RUN status for the completion gate
+                     # (robust to the empty-combined-status "pending" quirk that
+                     # made gh-pr-checks bucket detection time out)
 
 concurrency:
   # Key by PR when resolvable (same-repo PRs populate pull_requests), else the
@@ -73,21 +74,24 @@ jobs:
             echo "no open PR for $HEAD_SHA; nothing to do"; echo "SKIP=1" >> "$GITHUB_ENV"; exit 0
           fi
           echo "PR=$PR" >> "$GITHUB_ENV"
-          # Wait (bounded) until none of the REVIEWER checks are still pending.
-          # Filter by the `workflow` field so unrelated repo checks never stall
-          # us. concurrency (cancel-in-progress) supersedes this waiter when a
-          # later reviewer finishes, so the LAST reviewer proceeds; the loop also
-          # absorbs the triggering reviewer's own status-propagation lag.
+          # Wait (bounded) until every REVIEWER workflow RUN on this head has
+          # completed. Gate on the Actions RUN status (needs actions: read), NOT
+          # `gh pr checks` buckets: when a PR's reviewers post no commit status,
+          # the commit's COMBINED status stays "pending" (GitHub's default with
+          # 0 statuses), which fooled bucket detection into a perpetual "pending"
+          # -> 6min timeout -> SKIP -> the ledger silently never posted.
+          # concurrency (cancel-in-progress) supersedes this waiter when a later
+          # reviewer finishes, so the LAST reviewer proceeds.
           for i in $(seq 1 24); do
-            pending=$(gh pr checks "$PR" --json workflow,bucket 2>/dev/null \
+            running=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100" 2>/dev/null \
               | jq --arg r "$REVIEWERS" \
-                  '[.[] | select(.workflow|test("^(" + $r + ")$")) | select(.bucket=="pending")] | length' \
+                  '[.workflow_runs[] | select(.name|test("^(" + $r + ")$")) | select(.status != "completed")] | length' \
               2>/dev/null || echo 1)
-            pending=${pending:-1}
-            if [ "$pending" = "0" ]; then
-              echo "all reviewer checks complete -- writing ledger for PR #$PR"; exit 0
+            running=${running:-1}
+            if [ "$running" = "0" ]; then
+              echo "all reviewer runs complete -- writing ledger for PR #$PR"; exit 0
             fi
-            echo "reviewer checks still running: $pending (poll $i)…"; sleep 15
+            echo "reviewer runs still running: $running (poll $i)…"; sleep 15
           done
           echo "::notice title=Findings ledger::Timed out waiting for reviewer checks on PR #$PR; ledger not posted this run."
           echo "SKIP=1" >> "$GITHUB_ENV"
