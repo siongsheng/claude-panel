@@ -58,6 +58,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
+      # STICKY MARKER (load-bearing): this string must stay byte-identical in THREE
+      # places -- this env var, the prompt's mandated first line of arch-review.md,
+      # and the Post step's grep/jq lookup. Change one without the others and the
+      # sticky-edit silently breaks into duplicate comments.
       MARK: '## 🏛️ Architecture Review'
     steps:
       - name: Skip notice
@@ -77,7 +81,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .arch-review
-          gh pr diff "$PR" > .arch-review/diff.patch 2>/dev/null || : > .arch-review/diff.patch
+          if ! gh pr diff "$PR" > .arch-review/diff.patch 2>/dev/null; then
+            echo "::warning title=Architecture review::gh pr diff failed -- reviewing an EMPTY diff (check gh/token)."
+            : > .arch-review/diff.patch
+          fi
           echo "diff bytes: $(wc -c < .arch-review/diff.patch)"
 
       # The agent ANALYZES and WRITES its review to a file; it posts nothing (the
@@ -172,12 +179,16 @@ jobs:
             echo "::error title=Architecture review::review file missing '$MARK' on line 1 -- NOT posting (would duplicate next run)."
             exit 0
           fi
-          ID=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-                | jq -r --arg m "$MARK" '[.[] | select((.body // "")|startswith($m))] | last | .id // empty')
+          ID=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" 2>/dev/null \
+                | jq -r --arg m "$MARK" '[.[] | select((.body // "")|startswith($m))] | last | .id // empty' || true)
+          # ADVISORY: a transient gh api error (403/429/network) must NOT fail the
+          # job -- surface it loudly and exit 0, honoring "never blocks".
           if [ -n "$ID" ]; then
-            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$REVIEW" >/dev/null
+            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$REVIEW" >/dev/null \
+              || { echo "::error title=Architecture review::failed to update comment $ID (advisory, not blocking)."; exit 0; }
             echo "updated architecture-review comment $ID"
           else
-            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$REVIEW" >/dev/null
+            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$REVIEW" >/dev/null \
+              || { echo "::error title=Architecture review::failed to post comment (advisory, not blocking)."; exit 0; }
             echo "posted new architecture-review comment on PR #$PR"
           fi
