@@ -108,10 +108,10 @@ jobs:
           # withholds Bash/gh from the agent -- so the agent's attempts to POST the
           # ledger via `gh` are denied and NOTHING is posted (observed: num_turns>0,
           # is_error:false, permission_denials_count:5, "No buffered inline
-          # comments"). Grant exactly the tools the prompt needs: `gh` to read
-          # reviewer comments + create/PATCH the one ledger comment, and Read/Write
-          # to compose it. Without this the auto-ledger silently no-ops.
-          claude_args: '--allowed-tools "Bash(gh:*),Read,Write,Grep,Glob"'
+          # comments"). Grant exactly the tools the prompt needs: `gh`/`git` to read
+          # reviewer comments + the diff, create/PATCH the one ledger comment, and
+          # Read/Write to compose it. Without this the auto-ledger silently no-ops.
+          claude_args: '--allowed-tools "Bash(gh:*),Bash(git:*),Read,Write,Grep,Glob"'
           prompt: |
             Compose the Review Findings Ledger for pull request #${{ env.PR }}
             in ${{ env.REPO }}. All reviewer checks have completed. Use the
