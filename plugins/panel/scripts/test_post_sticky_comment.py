@@ -59,6 +59,39 @@ class TestHasMarker(unittest.TestCase):
         self.assertFalse(psc.has_marker("# Marker\nrow", MARK))
 
 
+class TestParseComments(unittest.TestCase):
+    """`gh api --paginate --jq '.[]'` emits ONE json object per line (JSONL).
+
+    Regression guard: a plain `--paginate` (no --jq) concatenates arrays
+    (`[...][...]`) into invalid JSON, which silently parsed to [] and caused a
+    duplicate sticky comment every run on PRs with >1 page of comments.
+    """
+    def test_parses_jsonl_pages(self):
+        text = '{"id": 1, "body": "a"}\n{"id": 2, "body": "b"}\n'
+        self.assertEqual(psc.parse_comments(text),
+                         [{"id": 1, "body": "a"}, {"id": 2, "body": "b"}])
+
+    def test_parses_single_array_line(self):
+        text = '[{"id": 1, "body": "a"}, {"id": 2, "body": "b"}]'
+        self.assertEqual(psc.parse_comments(text),
+                         [{"id": 1, "body": "a"}, {"id": 2, "body": "b"}])
+
+    def test_empty_returns_empty(self):
+        self.assertEqual(psc.parse_comments(""), [])
+        self.assertEqual(psc.parse_comments("\n\n"), [])
+
+    def test_skips_unparseable_lines(self):
+        text = '{"id": 1, "body": "a"}\nnot json\n{"id": 2, "body": "b"}\n'
+        self.assertEqual(psc.parse_comments(text),
+                         [{"id": 1, "body": "a"}, {"id": 2, "body": "b"}])
+
+    def test_skips_non_dict_values(self):
+        # A bare string/number or an error object must not become a comment
+        # (and must never reach find_existing_id as a non-dict).
+        text = '"hello"\n123\n{"id": 9, "body": "x"}\n'
+        self.assertEqual(psc.parse_comments(text), [{"id": 9, "body": "x"}])
+
+
 class TestFindExistingId(unittest.TestCase):
     def test_finds_by_marker_prefix(self):
         comments = [
