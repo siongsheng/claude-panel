@@ -45,8 +45,8 @@ repo, and the user has admin on the repo (secrets + App install need it). Determ
 repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own vendored
 resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
 `templates/architecture-review.yml`, `templates/tdd-gate.yml`,
-`templates/findings-ledger.yml`, `scripts/deepseek_review.py`, `bin/tdd-check`,
-`bin/test_tdd_check.py` — so init
+`templates/findings-ledger.yml`, `scripts/deepseek_review.py`,
+`scripts/post_sticky_comment.py`, `bin/tdd-check`, `bin/test_tdd_check.py` — so init
 triages itself up front instead of crashing mid-run. If any precondition fails, report
 exactly what's missing / what the human must do and stop.
 
@@ -85,7 +85,10 @@ architecture-review skills — dependency-direction/hexagonal rubric, complexity
 + refactor roadmap, disciplined high-signal findings, and an ADR/decision lens. It reuses
 the `CLAUDE_CODE_OAUTH_TOKEN` set above, no-ops cleanly without it, and reviews the PR's
 `base..head` diff. The criteria are decades-stable, so the floor doesn't track any
-fast-moving (or differently-licensed) third-party skill.
+fast-moving (or differently-licensed) third-party skill. Also vendor
+`scripts/post_sticky_comment.py` → `scripts/post_sticky_comment.py` (idempotent — the same
+shared script the findings ledger uses in step 6): the review's `Post` step calls it to
+post/edit its one sticky comment.
 
 **Optional stack-matched upgrade (suggest, don't bundle).** Read the target repo's stack;
 if a well-maintained, permissively-licensed architecture skill matches it, SUGGEST it as
@@ -166,6 +169,9 @@ fail a bundled-commit / broken-ancestry branch.
 
 ### 6. Auto findings ledger
 Vendor this plugin's `templates/findings-ledger.yml` → `.github/workflows/findings-ledger.yml`.
+Also vendor `scripts/post_sticky_comment.py` → `scripts/post_sticky_comment.py` (idempotent —
+skip if already present from step 3): the ledger's `Post` step calls it to normalize the
+agent's output, assert the marker, and edit-in-place-or-create the one ledger comment.
 It fires on `workflow_run` completion of the reviewer workflows, gates until **all** PR
 checks are done (the last reviewer to finish writes the ledger; earlier firings no-op),
 then runs a headless `claude-code-action` session with `panel` installed to triage every
