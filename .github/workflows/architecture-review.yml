@@ -1,6 +1,6 @@
 # This repo's own copy of templates/architecture-review.yml (identical body —
-# claude-code-action needs no path adjustment; only this header differs).
-# Downstream repos get the same template via /panel-init.
+# claude-code-action needs no path adjustment; only this header and the
+# post_sticky_comment.py path differ). Downstream repos get the template via /panel-init.
 name: Architecture review
 
 # Panel's UNIVERSAL, repo-agnostic architecture reviewer (the Claude-family
@@ -156,42 +156,18 @@ jobs:
       # place, else create). ALWAYS posts -- a clean review stays visible, not
       # silent -- and a missing/malformed file is a loud ::error::, never a green
       # no-op.
+      - uses: actions/setup-python@v5
+        if: env.HAS_TOKEN == 'true'
+        with:
+          python-version: '3.12'
+      # Deterministic, unit-tested post of ONE sticky architecture-review comment
+      # (normalize fenced output -> assert marker -> edit-in-place, else create).
+      # Shared logic lives in scripts/post_sticky_comment.py so the fence/marker/
+      # dedup edge cases are tested, not re-inlined per workflow. ADVISORY: a
+      # missing/malformed file or a transient gh error is a loud ::error:: but
+      # never fails the build.
       - name: Post architecture review
         if: env.HAS_TOKEN == 'true'
         run: |
-          set -euo pipefail
-          REVIEW=.arch-review/arch-review.md
-          if [ ! -s "$REVIEW" ]; then
-            echo "::error title=Architecture review::agent produced no review file -- nothing posted (see Compose step log)."
-            exit 0   # advisory: never fail the build, but never hide it either
-          fi
-          # Tolerate an over-formatted agent: if the body is wrapped in a ```
-          # fence, strip the leading fence + leading blanks AND the matching
-          # trailing fence -- but only strip the trailing fence when a leading
-          # one was stripped, so a review that legitimately ENDS with a code
-          # block is left intact. Leaves the sticky marker on line 1.
-          awk '
-            BEGIN{started=0; n=0; strippedlead=0}
-            { if(!started){ if($0 ~ /^[[:space:]]*```/){ strippedlead=1; next } if($0 ~ /^[[:space:]]*$/) next; started=1 }
-              buf[++n]=$0 }
-            END{ if(strippedlead && n>0 && buf[n] ~ /^[[:space:]]*```[[:space:]]*$/) n--; for(i=1;i<=n;i++) print buf[i] }
-          ' "$REVIEW" > "$REVIEW.clean" && mv "$REVIEW.clean" "$REVIEW"
-          # The sticky marker MUST be line 1, or the next run can't find this
-          # comment and would POST a duplicate every run -- fail loud instead.
-          if ! head -1 "$REVIEW" | grep -qF "$MARK"; then
-            echo "::error title=Architecture review::review file missing '$MARK' on line 1 -- NOT posting (would duplicate next run)."
-            exit 0
-          fi
-          ID=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" 2>/dev/null \
-                | jq -r --arg m "$MARK" '[.[] | select((.body // "")|startswith($m))] | last | .id // empty' || true)
-          # ADVISORY: a transient gh api error (403/429/network) must NOT fail the
-          # job -- surface it loudly and exit 0, honoring "never blocks".
-          if [ -n "$ID" ]; then
-            gh api --method PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$REVIEW" >/dev/null \
-              || { echo "::error title=Architecture review::failed to update comment $ID (advisory, not blocking)."; exit 0; }
-            echo "updated architecture-review comment $ID"
-          else
-            gh api --method POST "repos/$REPO/issues/$PR/comments" -F body=@"$REVIEW" >/dev/null \
-              || { echo "::error title=Architecture review::failed to post comment (advisory, not blocking)."; exit 0; }
-            echo "posted new architecture-review comment on PR #$PR"
-          fi
+          python3 plugins/panel/scripts/post_sticky_comment.py "$PR" \
+            --marker "$MARK" --body-file .arch-review/arch-review.md
