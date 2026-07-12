@@ -2,10 +2,12 @@
 """Post ONE sticky comment on a PR — create it, or edit it in place.
 
 Shared by panel's CI agent-reviewers (architecture-review, findings-ledger):
-the agent composes a markdown body to a file, then this script posts it as a
-single comment identified by a marker (its exact first line). On a later run it
-finds that comment by the marker and PATCHes it, so the PR carries exactly ONE
-of each reviewer's comments instead of a new one per push.
+the agent composes a markdown body to a file, then this script normalizes it
+(strips a wrapping ``` code fence + leading blank lines so the marker lands on
+line 1), asserts the marker, and posts it as a single comment identified by that
+marker (its exact first line). On a later run it finds that comment by the marker
+and PATCHes it, so the PR carries exactly ONE of each reviewer's comments instead
+of a new one per push.
 
 It replaces the awk/bash "Post" state machine that was previously inlined and
 duplicated across four workflow files, with the fence/marker/dedup edge cases
@@ -68,6 +70,31 @@ def has_marker(text: str, marker: str) -> bool:
     return first.startswith(marker)
 
 
+def parse_comments(text: str) -> list[dict]:
+    """Parse the output of `gh api ... --paginate --jq '.[]'` into a list of dicts.
+
+    That command streams ONE json object per line (JSONL). Parsing line-by-line
+    avoids the trap of a plain `--paginate` (no --jq), which concatenates each
+    page's array (`[...][...]`) into invalid JSON -- a single json.loads on that
+    fails, and swallowing the error to [] silently posts a duplicate sticky
+    comment every run. Also tolerates a single JSON array (one line) for
+    robustness, skips unparseable lines, and keeps only dict items (so an error
+    object / bare value can never reach find_existing_id as a non-dict).
+    """
+    out: list[dict] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            val = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        items = val if isinstance(val, list) else [val]
+        out.extend(x for x in items if isinstance(x, dict))
+    return out
+
+
 def find_existing_id(comments: list[dict], marker: str):
     """Return the id of the LAST comment whose body starts with marker, else None.
 
@@ -107,13 +134,14 @@ def main() -> int:
     args = ap.parse_args()
 
     path = pathlib.Path(args.body_file)
-    if not path.is_file() or not path.read_text().strip():
+    raw = path.read_text() if path.is_file() else ""
+    if not raw.strip():
         # Advisory: the compose step produced nothing usable -- loud but green.
         print(f"::error title=Sticky comment::no body at {args.body_file} -- "
               "nothing posted (see the compose step log).")
         return 0
 
-    body = normalize(path.read_text())
+    body = normalize(raw)
     if not has_marker(body, args.marker):
         # Marker MUST be line 1, or a later run can't find this comment and
         # would post a duplicate every run. Fail loud instead of duplicating.
@@ -122,18 +150,17 @@ def main() -> int:
         return 0
 
     repo = _repo()
-    rc, out = gh(["api", f"repos/{repo}/issues/{args.pr}/comments", "--paginate"])
+    # --jq '.[]' streams one comment object per line (JSONL); see parse_comments
+    # for why plain --paginate on an array is unsafe.
+    rc, out = gh(["api", f"repos/{repo}/issues/{args.pr}/comments",
+                  "--paginate", "--jq", ".[]"])
     if rc != 0:
         print("::error title=Sticky comment::failed to list comments "
               "(advisory, not blocking).")
         return 0
-    try:
-        comments = json.loads(out) if out.strip() else []
-    except json.JSONDecodeError:
-        comments = []
-    existing = find_existing_id(comments, args.marker)
+    existing = find_existing_id(parse_comments(out), args.marker)
 
-    tmp = pathlib.Path(tempfile.gettempdir()) / f"sticky-{args.pr}.md"
+    tmp = pathlib.Path(tempfile.gettempdir()) / f"sticky-{args.pr}-{os.getpid()}.md"
     tmp.write_text(body)
     if existing is not None:
         rc, _ = gh(["api", "--method", "PATCH",
