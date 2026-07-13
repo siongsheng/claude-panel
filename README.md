@@ -8,7 +8,7 @@ A Claude Code plugin for **prevention-first agentic development**. It is a delib
 - **Cross-model-family review** (`scripts/deepseek_review.py` + Action) — an independent DeepSeek reviewer alongside Claude reviewers, so findings are cross-checked by two model families with different blind spots. Everything else in the ecosystem is Claude-only.
 - **Deterministic two-commit TDD** (`bin/tdd-check`) — verifies a test-only commit is an *ancestor* of its implementation commit and rejects bundled commits. Ancestry-based, so it survives rebase (wall-clock timestamps don't) — a hard gate complementing superpowers' TDD *discipline*.
 
-Plus a **findings-ledger** discipline (one edited-in-place table per PR) and **deferred→issues** (every real-but-unfixed finding becomes a tracked GitHub issue).
+Plus a **findings-ledger** discipline (one edited-in-place table per PR, with an append-only audit log of who changed what), **creating-github-issues** (dedup-first, template-aware, actionable issue filing), and **deferred→issues** (every real-but-unfixed finding becomes a tracked GitHub issue).
 
 ## Install
 

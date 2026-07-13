@@ -86,6 +86,42 @@ then MERGE:
 So the ledger only ever **grows and updates in place** — it is never overwritten with the
 latest review's snapshot.
 
+## Audit log — who changed what, when (append-only)
+
+The ledger is edited in place, so a naive PATCH erases the history of *how it got here* —
+GitHub's comment-edit view shows only raw body diffs, not a semantic trail. Keep an
+**append-only Audit log** section below the table so every status change is attributable.
+This is the accountability layer: "understand, then merge" means a reader can see who
+decided what before the merge.
+
+Under the table, maintain a fenced, append-only list — **never rewrite or reorder existing
+lines; only append**:
+
+> **Audit log**
+> - `2026-07-14 · auto-ledger (CI) · R1,R2 added; R2 ❌ Rejected`
+> - `2026-07-14 · auto-ledger (CI) · R1 Open→✅ Fixed @3177094`
+> - `2026-07-14 · human (siongsheng) · R3 Open→📋 Deferred → #31`
+
+Each entry records:
+
+- **When** — the date (an ISO date is enough; the comment already carries a timestamp).
+- **Actor — who made THIS edit.** Distinguish the automated CI ledger (`auto-ledger (CI)`)
+  from a person editing during the `/panel` loop (`human (<login>)`), and from a named
+  reviewer if relevant. This is the "who" the audit is for: an automated triage pass and a
+  human override must not look identical.
+- **What** — which row IDs changed and the transition (`Open→✅ Fixed @<sha>`,
+  `Open→❌ Rejected`, `→📋 Deferred → #N`), or `Rn added` for new rows.
+
+Rules:
+
+- **Append-only.** Every update adds one line for what that update did; it never edits or
+  removes earlier lines. This is what makes it an audit trail rather than a status field.
+- **Survives the cumulative merge.** Like the table, the log is preserved on every re-run
+  (see "Cumulative" above) — the compose step reads the existing log and appends, never
+  regenerates it.
+- **One line per edit session**, summarizing that session's changes — not one line per
+  row per run (keep it readable).
+
 ## Update in place — never post follow-ups
 
 As fixes land and issues get filed, EDIT the existing ledger comment. Do not post new
