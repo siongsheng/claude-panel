@@ -41,15 +41,19 @@ Post a single comment titled **📋 Review Findings Ledger** containing one tabl
 | Status | Meaning | Needs an issue? |
 |--------|---------|-----------------|
 | ✅ Fixed `<sha>` | Confirmed defect, fixed in this PR; pin with a test | No |
-| 📋 Deferred → #N | Valid, but belongs to later work | **Yes** |
-| 📌 Standing → #N | Real pre-existing defect this change did not cause | **Yes** |
-| 🤔 Owner decision → #N | Product / design judgment call | **Yes** (`design-decision`) |
+| 📋 Deferred → [#N](url) | Valid, but belongs to later work | **Yes** |
+| 📌 Standing → [#N](url) | Real pre-existing defect this change did not cause | **Yes** |
+| 🤔 Owner decision → [#N](url) | Product / design judgment call | **Yes** (`design-decision`) |
 | ❌ Rejected | False positive — state the reason inline | No |
 
-**Every non-Fixed, non-Rejected row MUST carry an issue link.** The only rows without an
-issue are ✅ Fixed and ❌ Rejected. Do not leave a Standing or Deferred finding as a
-ledger note only — that lets real defects go untracked. (See the `deferred-to-issues`
-skill for filing them.)
+**Every non-Fixed, non-Rejected row MUST link to its tracked issue.** Write the reference
+in the Status column as a **markdown link to the issue**, not a bare number — e.g.
+`📋 Deferred → [#31](https://github.com/<owner>/<repo>/issues/31)` — so the reader can jump
+straight to it. (A bare `#31` auto-links only within the same repo's comments; an explicit
+link always resolves and works cross-repo, so prefer it.) The only rows without an issue
+are ✅ Fixed and ❌ Rejected. Do not leave a Standing or Deferred finding as a ledger note
+only — that lets real defects go untracked. (See the `deferred-to-issues` skill for filing
+them.)
 
 ## Record which reviewers ran
 
@@ -85,6 +89,44 @@ then MERGE:
 
 So the ledger only ever **grows and updates in place** — it is never overwritten with the
 latest review's snapshot.
+
+## Audit log — who changed what, when (append-only)
+
+The ledger is edited in place, so a naive PATCH erases the history of *how it got here* —
+GitHub's comment-edit view shows only raw body diffs, not a semantic trail. Keep an
+**append-only Audit log** section below the table so every status change is attributable.
+This is the accountability layer: "understand, then merge" means a reader can see who
+decided what before the merge.
+
+Under the table, maintain an append-only bulleted list (one backticked line per edit) —
+**never rewrite or reorder existing lines; only append**. Do not wrap it in a ``` code
+fence (a fence around the whole ledger body would collide with the sticky-comment marker
+normalization):
+
+> **Audit log**
+> - `2026-07-14 · auto-ledger (CI) · R1,R2 added; R2 ❌ Rejected`
+> - `2026-07-14 · auto-ledger (CI) · R1 Open→✅ Fixed @3177094`
+> - `2026-07-14 · human (siongsheng) · R3 Open→📋 Deferred → #31`
+
+Each entry records:
+
+- **When** — the date (an ISO date is enough; the comment already carries a timestamp).
+- **Actor — who made THIS edit.** Distinguish the automated CI ledger (`auto-ledger (CI)`)
+  from a person editing during the `/panel` loop (`human (<login>)`), and from a named
+  reviewer if relevant. This is the "who" the audit is for: an automated triage pass and a
+  human override must not look identical.
+- **What** — which row IDs changed and the transition (`Open→✅ Fixed @<sha>`,
+  `Open→❌ Rejected`, `→📋 Deferred → #N`), or `Rn added` for new rows.
+
+Rules:
+
+- **Append-only.** Every update adds one line for what that update did; it never edits or
+  removes earlier lines. This is what makes it an audit trail rather than a status field.
+- **Survives the cumulative merge.** Like the table, the log is preserved on every re-run
+  (see "Cumulative" above) — the compose step reads the existing log and appends, never
+  regenerates it.
+- **One line per edit session**, summarizing that session's changes — not one line per
+  row per run (keep it readable).
 
 ## Update in place — never post follow-ups
 
