@@ -41,15 +41,19 @@ Post a single comment titled **📋 Review Findings Ledger** containing one tabl
 | Status | Meaning | Needs an issue? |
 |--------|---------|-----------------|
 | ✅ Fixed `<sha>` | Confirmed defect, fixed in this PR; pin with a test | No |
-| 📋 Deferred → #N | Valid, but belongs to later work | **Yes** |
-| 📌 Standing → #N | Real pre-existing defect this change did not cause | **Yes** |
-| 🤔 Owner decision → #N | Product / design judgment call | **Yes** (`design-decision`) |
+| 📋 Deferred → [#N](url) | Valid, but belongs to later work | **Yes** |
+| 📌 Standing → [#N](url) | Real pre-existing defect this change did not cause | **Yes** |
+| 🤔 Owner decision → [#N](url) | Product / design judgment call | **Yes** (`design-decision`) |
 | ❌ Rejected | False positive — state the reason inline | No |
 
-**Every non-Fixed, non-Rejected row MUST carry an issue link.** The only rows without an
-issue are ✅ Fixed and ❌ Rejected. Do not leave a Standing or Deferred finding as a
-ledger note only — that lets real defects go untracked. (See the `deferred-to-issues`
-skill for filing them.)
+**Every non-Fixed, non-Rejected row MUST link to its tracked issue.** Write the reference
+in the Status column as a **markdown link to the issue**, not a bare number — e.g.
+`📋 Deferred → [#31](https://github.com/<owner>/<repo>/issues/31)` — so the reader can jump
+straight to it. (A bare `#31` auto-links only within the same repo's comments; an explicit
+link always resolves and works cross-repo, so prefer it.) The only rows without an issue
+are ✅ Fixed and ❌ Rejected. Do not leave a Standing or Deferred finding as a ledger note
+only — that lets real defects go untracked. (See the `deferred-to-issues` skill for filing
+them.)
 
 ## Record which reviewers ran
 

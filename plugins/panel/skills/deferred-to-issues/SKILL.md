@@ -42,8 +42,9 @@ use it to do the actual filing. Panel-specific rules layered on top:
   in this change), and a link back to the originating PR — so the trail is bidirectional.
 - **One finding per issue** (never batch), and dedup against open issues first: if one
   already covers this area, extend it rather than opening a duplicate.
-- Put the resulting issue number back into the `findings-ledger` row (`📋 Deferred → #N`
-  / `📌 Standing → #N` / `🤔 Owner decision → #N`).
+- Put the resulting issue back into the `findings-ledger` row's Status column as a
+  **markdown link** — `📋 Deferred → [#N](url)` / `📌 Standing → [#N](url)` /
+  `🤔 Owner decision → [#N](url)` — so the reader can jump straight to it.
 
 Then file it via the `creating-github-issues` skill — run its dedup search FIRST, then
 create with the panel label above. (No raw `gh issue create` here on purpose: filing
