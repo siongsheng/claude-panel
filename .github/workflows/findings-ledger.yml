@@ -176,8 +176,9 @@ jobs:
             3. APPEND to the append-only **Audit log** section (below the table;
                create it if absent). Add ONE line for THIS run summarizing what
                changed, attributed to the automated actor and dated with the
-               contents of today.txt, e.g.
-               `- \`<today.txt> · auto-ledger (CI) · R1,R2 added; R2 ❌ Rejected\``.
+               contents of today.txt. Format each entry as a markdown list item
+               whose text is wrapped in single backticks, for example:
+               <today.txt> · auto-ledger (CI) · R1,R2 added; R2 ❌ Rejected
                Append this line ONLY when a row or status actually changed this
                run — do NOT add a "no changes" line on a re-run that changed
                nothing (that just accretes noise). PRESERVE every existing audit
