@@ -80,8 +80,12 @@ jobs:
           # `<!-- ledger: author=panel-agent sha=<sha> -->`. If present for this
           # SHA, CI stands down: no re-compose can silently degrade it. CI still
           # takes over for un-driven PRs and later pushes (stale/absent sentinel).
-          if gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' 2>/dev/null \
-               | grep -qF "ledger: author=panel-agent sha=$HEAD_SHA"; then
+          # Read fully THEN grep (no pipe): `grep -q` closes the pipe on match,
+          # which SIGPIPEs `gh` (exit 141) and, under pipefail, would flip the
+          # result to a false negative on a busy PR (lots of comment bytes after
+          # the ledger) -- causing CI to wrongly re-compose over the agent ledger.
+          BODIES=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' 2>/dev/null || true)
+          if grep -qF "ledger: author=panel-agent sha=$HEAD_SHA" <<<"$BODIES"; then
             echo "agent-authored ledger present for $HEAD_SHA -- CI defers (no re-compose)."
             echo "SKIP=1" >> "$GITHUB_ENV"; exit 0
           fi
@@ -228,6 +232,19 @@ jobs:
       # for posting, and the post is immune to a stale gather-time snapshot).
       # ADVISORY: a missing/malformed file or transient gh error is a loud
       # ::error:: but never fails the build.
+      # Race guard: re-check the sentinel right before posting. The resolve-step
+      # check runs BEFORE the (minutes-long) reviewer wait; a /panel agent may
+      # stamp its ledger DURING that window. Re-checking here honors it and
+      # shrinks the residual race to the unavoidable post-vs-post instant.
+      - name: Re-check agent sentinel before post
+        if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        run: |
+          set -euo pipefail
+          BODIES=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' 2>/dev/null || true)
+          if grep -qF "ledger: author=panel-agent sha=$HEAD_SHA" <<<"$BODIES"; then
+            echo "agent-authored ledger appeared during the wait -- CI defers, not posting."
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
       # Self-check: a deferred finding must resolve to a real link or the visible
       # `⚠️ Needs issue` status -- never a vague "tracked separately" placeholder
       # that reads as handled when it isn't. Advisory (::warning, never blocks).
