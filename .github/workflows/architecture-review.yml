@@ -50,9 +50,7 @@ on:
       - '**.md'
       - '**.markdown'
       - '**.rst'
-      - '**.txt'
       - '**.adoc'
-      - 'docs/**'
       - 'LICENSE'
 
 permissions:

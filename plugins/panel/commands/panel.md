@@ -75,8 +75,9 @@ Never trust the implementer's claim that gates pass; verify independently.
 Open a PR (body in the required five-section format: `## Why`, `## Impact to
 Stakeholders`, `## What's in this PR`, `## Notable decision`, `## Validation`). Then run
 the reviewer families IN PARALLEL, each independent of the implementer. The Claude-side
-family is the **mandatory floor**; the cross-model family is **additive and opt-out**
-(see below):
+family is the **mandatory floor** for any diff that touches code (the one exception is a
+*provably-inert* docs/prose diff, which is right-sized — see the Architecture bullet); the
+cross-model family is **additive and opt-out** (see below):
 - **Claude-side reviewer(s):** run in a fresh context / subagent that did not write
   the code, and apply the `adversarial-review` skill's dimensions and verdict format.
   These reviewers are NOT interchangeable for architecture — cover BOTH:
@@ -87,7 +88,7 @@ family is the **mandatory floor**; the cross-model family is **additive and opt-
     touches code, config, CI, dependencies, or migrations. **Right-sizing by blast
     radius (not opt-out):** when the diff is *provably inert* — EVERY changed file
     matches the docs/prose allowlist CI uses for `paths-ignore` (`**.md`, `**.markdown`,
-    `**.rst`, `**.txt`, `**.adoc`, `docs/**`, `LICENSE`) — you MAY skip it, matching CI,
+    `**.rst`, `**.adoc`, `LICENSE`) — you MAY skip it, matching CI,
     which skips both the architecture and DeepSeek reviewers on that same allowlist. Any
     single non-inert file → it runs (fail-closed). When you skip on this basis, record
     it in the findings ledger (step 8) as a visible downgrade. This keeps the in-session

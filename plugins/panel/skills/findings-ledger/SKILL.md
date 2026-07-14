@@ -94,8 +94,8 @@ A family may be skipped for two distinct reasons — keep both visible and disti
 
 - `⏭️ skipped — single-provider mode` — no `DEEPSEEK_API_KEY` (cross-model only).
 - `⏭️ skipped — low blast radius (inert diff)` — CI `paths-ignore` right-sizing on a
-  docs/prose-only diff (every changed file matches `**.md`/`.markdown`/`.rst`/`.txt`/
-  `.adoc`, `docs/**`, `LICENSE`). This can skip **both** the architecture and DeepSeek
+  docs/prose-only diff (every changed file matches `**.md`/`.markdown`/`.rst`/
+  `.adoc`, `LICENSE`). This can skip **both** the architecture and DeepSeek
   families — the deterministic gate (`tdd-check`) and the official `claude-code-review`
   still run. Example coverage line for an inert diff:
 

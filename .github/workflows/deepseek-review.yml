@@ -16,9 +16,7 @@ on:
       - '**.md'
       - '**.markdown'
       - '**.rst'
-      - '**.txt'
       - '**.adoc'
-      - 'docs/**'
       - 'LICENSE'
 
 # Least privilege: read the code, comment on the PR.

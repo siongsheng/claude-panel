@@ -198,7 +198,7 @@ jobs:
             3. RECORD COVERAGE (which reviewers ran) as a line under the table.
                VISIBLE DOWNGRADE: if `diff.patch` is entirely inert docs/prose —
                EVERY changed file matches the allowlist `**.md`/`.markdown`/`.rst`/
-               `.txt`/`.adoc`, `docs/**`, `LICENSE` — then the Architecture and
+               `.adoc`, `LICENSE` — then the Architecture and
                DeepSeek reviewers were skipped by CI `paths-ignore` (that is why
                their comments are absent, NOT because they ran clean). Record it
                explicitly, e.g. `Architecture + Cross-model (DeepSeek) ⏭️ skipped —

@@ -47,11 +47,14 @@ finding source).
 
 ### 2. Coverage (visible downgrade)
 Note which reviewer families produced output. If the diff is **provably inert** — every
-changed file matches the docs/prose allowlist `**.md`/`.markdown`/`.rst`/`.txt`/`.adoc`,
-`docs/**`, `LICENSE` — the Architecture + DeepSeek reviewers were skipped by CI
-`paths-ignore`; record `⏭️ skipped — low blast radius (docs-only diff)`, not silence. If any
-file is non-inert, a missing reviewer means it genuinely produced nothing — don't claim a
-blast-radius skip. (See the `findings-ledger` skill's "Record which reviewers ran".)
+changed file matches the docs/prose allowlist `**.md`/`.markdown`/`.rst`/`.adoc`,
+`LICENSE` — the Architecture + DeepSeek reviewers were skipped by CI
+`paths-ignore`; record `⏭️ skipped — low blast radius (docs-only diff)`, not silence. (This
+is timing-independent: an inert diff never triggers those reviewers, so the skip is true
+whether or not CI has finished.) If any file is non-inert, a missing reviewer means it
+genuinely produced nothing OR its CI run has not finished yet — do NOT claim a blast-radius
+skip, and if CI may still be running, mark that reviewer's coverage provisional rather than
+asserting it found nothing. (See the `findings-ledger` skill's "Record which reviewers ran".)
 
 ### 3. Triage + merge
 Apply `blocker-triage` then `findings-ledger`: triage every finding (real vs false; expect
