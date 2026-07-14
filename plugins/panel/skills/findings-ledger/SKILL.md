@@ -36,6 +36,14 @@ Post a single comment titled **📋 Review Findings Ledger** containing one tabl
   claim.
 - **Status** — one of the values below.
 
+**Capture EVERY finding from EVERY reviewer — including non-blocking ones.** A reviewer's
+"Suggestions", "Nits", "Non-blocking", or "Minor" subsection contains findings too: each
+gets its own row (Severity `NIT` or `SHOULD FIX` after triage), same as blockers. Do not
+read only the BLOCKER / "Request changes" list and drop the rest — a reviewer that raised
+6 items must produce 6 rows (minus dedup), not 3. Silently omitting a reviewer's
+lower-severity section is the same defect as dropping the reviewer entirely: the reader
+trusts the table is complete across every reviewer and every severity.
+
 ## Statuses
 
 | Status | Meaning | Needs an issue? |
@@ -44,16 +52,31 @@ Post a single comment titled **📋 Review Findings Ledger** containing one tabl
 | 📋 Deferred → [#N](url) | Valid, but belongs to later work | **Yes** |
 | 📌 Standing → [#N](url) | Real pre-existing defect this change did not cause | **Yes** |
 | 🤔 Owner decision → [#N](url) | Product / design judgment call | **Yes** (`design-decision`) |
+| ⚠️ Needs issue | Real Deferred/Standing finding **not yet filed** — a visible, unresolved gap | **Yes — not yet done** |
 | ❌ Rejected | False positive — state the reason inline | No |
 
-**Every non-Fixed, non-Rejected row MUST link to its tracked issue.** Write the reference
-in the Status column as a **markdown link to the issue**, not a bare number — e.g.
-`📋 Deferred → [#31](https://github.com/<owner>/<repo>/issues/31)` — so the reader can jump
-straight to it. (A bare `#31` auto-links only within the same repo's comments; an explicit
-link always resolves and works cross-repo, so prefer it.) The only rows without an issue
-are ✅ Fixed and ❌ Rejected. Do not leave a Standing or Deferred finding as a ledger note
-only — that lets real defects go untracked. (See the `deferred-to-issues` skill for filing
-them.)
+**Every non-Fixed, non-Rejected row MUST resolve to one of exactly two honest states:**
+
+1. **Tracked** — a **markdown link to the issue** in the Status column, not a bare number:
+   `📋 Deferred → [#31](https://github.com/<owner>/<repo>/issues/31)` — so the reader can
+   jump straight to it. (A bare `#31` auto-links only within the same repo's comments; an
+   explicit link always resolves and works cross-repo, so prefer it.)
+2. **`⚠️ Needs issue`** — the finding is real and deferred but an issue has NOT been filed
+   yet. Use this whenever you cannot file the issue in the current context (see the
+   advisory note below). It is an explicit, visible admission that tracking is still owed.
+
+**Never write a vague "tracked separately", "see other issue", or a bare number that
+implies tracking without a link.** That reads as handled when it is not — the exact silent
+gap this ledger exists to prevent. A finding is either linked (state 1) or loudly
+`⚠️ Needs issue` (state 2); there is no third, hand-wavy option. The only rows with no
+issue at all are ✅ Fixed and ❌ Rejected. (See the `deferred-to-issues` skill for filing —
+once filed, upgrade a `⚠️ Needs issue` row to `📋 Deferred → [#N](url)`.)
+
+> **Advisory automated ledger (CI):** the auto-posted ledger runs advisory-only and
+> **cannot file issues** (no `gh`/write scope). It MUST therefore mark every real
+> Deferred/Standing finding `⚠️ Needs issue` — never invent a link or a "tracked
+> separately" placeholder. The `/panel` loop (or a human) then files the issue via
+> `deferred-to-issues` and upgrades the row to the linked form.
 
 ## Record which reviewers ran
 
@@ -89,6 +112,30 @@ then MERGE:
 
 So the ledger only ever **grows and updates in place** — it is never overwritten with the
 latest review's snapshot.
+
+## Two authors, one comment — the authorship sentinel
+
+The ledger can be written by two mechanisms, and they must not clobber each other:
+
+- The **supervising `/panel` agent** (primary when a loop is running) — it also holds the
+  in-session subagent reviews the CI job can't see, so its ledger is the most complete.
+- The **CI auto-ledger** (fallback) — for PRs no one is driving with `/panel`, and for
+  later pushes.
+
+To hand off cleanly, an agent-authored ledger carries an **authorship sentinel** as the
+last line of the body (an HTML comment — invisible when rendered):
+
+```
+<!-- ledger: author=panel-agent sha=<PR head SHA> -->
+```
+
+The CI auto-ledger checks for it: **if a `panel-agent` sentinel matches the current head
+SHA, CI stands down** (no re-compose, no post) — the agent's ledger is authoritative for
+that commit. CI only takes over when there is no such sentinel (an un-driven PR) or it is
+stale (a later push changed the SHA, so the agent's ledger no longer covers the new code).
+Both write the SAME sticky comment, so there is never a duplicate — the sentinel just
+decides who composes it. This prevents a second, less-informed re-compose from silently
+degrading the agent's richer ledger.
 
 ## Audit log — who changed what, when (append-only)
 
