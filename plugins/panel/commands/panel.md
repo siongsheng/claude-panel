@@ -75,15 +75,25 @@ Never trust the implementer's claim that gates pass; verify independently.
 Open a PR (body in the required five-section format: `## Why`, `## Impact to
 Stakeholders`, `## What's in this PR`, `## Notable decision`, `## Validation`). Then run
 the reviewer families IN PARALLEL, each independent of the implementer. The Claude-side
-family is the **mandatory floor**; the cross-model family is **additive and opt-out**
-(see below):
+family is the **mandatory floor** for any diff that touches code (the one exception is a
+*provably-inert* docs/prose diff, which is right-sized — see the Architecture bullet); the
+cross-model family is **additive and opt-out** (see below):
 - **Claude-side reviewer(s):** run in a fresh context / subagent that did not write
   the code, and apply the `adversarial-review` skill's dimensions and verdict format.
   These reviewers are NOT interchangeable for architecture — cover BOTH:
-  - **Architecture/spec (REQUIRED):** superpowers' `requesting-code-review` or
-    feature-dev's `code-reviewer` agent — these are the only ones that review
-    architecture & design, coupling/separation, breaking changes, and plan/spec
-    compliance. One of them MUST run.
+  - **Architecture/spec (REQUIRED for code changes; right-sized for inert diffs):**
+    superpowers' `requesting-code-review` or feature-dev's `code-reviewer` agent —
+    these are the only ones that review architecture & design, coupling/separation,
+    breaking changes, and plan/spec compliance. One of them MUST run for any diff that
+    touches code, config, CI, dependencies, or migrations. **Right-sizing by blast
+    radius (not opt-out):** when the diff is *provably inert* — EVERY changed file
+    matches the docs/prose allowlist CI uses for `paths-ignore` (`**.md`, `**.markdown`,
+    `**.rst`, `**.adoc`, `LICENSE`) — you MAY skip it, matching CI,
+    which skips both the architecture and DeepSeek reviewers on that same allowlist. Any
+    single non-inert file → it runs (fail-closed). When you skip on this basis, record
+    it in the findings ledger (step 8) as a visible downgrade. This keeps the in-session
+    loop and CI in agreement — CI-level `paths-ignore` is the chosen mechanism, so the
+    loop must not demand a review CI deliberately right-sized away.
   - **Additive lenses (recommended):** `pr-review-toolkit`'s multi-lens review for its
     specialties (type-design, silent-failure, test-gap, comment accuracy). It does
     NOT review system architecture, so it is an *addition* to the required reviewer

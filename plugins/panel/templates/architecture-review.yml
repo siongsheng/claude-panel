@@ -37,6 +37,18 @@ name: Architecture review
 on:
   pull_request:
     types: [opened, ready_for_review, reopened, synchronize]
+    # BLAST-RADIUS RIGHT-SIZING: skip this advisory reviewer only when EVERY changed
+    # file is inert docs/prose. Fail-closed by construction -- any non-inert file
+    # (code, .github/**, deps, lockfiles, config, migrations, Dockerfiles) survives
+    # the filter, so the reviewer runs. The deterministic gate (tdd-gate) and the
+    # official claude-code-review are NEVER right-sized. Keep this list in sync with
+    # deepseek-review.yml's paths-ignore and the panel.md / findings-ledger prose.
+    paths-ignore:
+      - '**.md'
+      - '**.markdown'
+      - '**.rst'
+      - '**.adoc'
+      - 'LICENSE'
 
 permissions:
   contents: read
