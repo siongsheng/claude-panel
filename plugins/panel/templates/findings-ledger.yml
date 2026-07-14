@@ -195,7 +195,18 @@ jobs:
                If existing.md is empty AND nothing survives triage, produce the
                clean "✅ Reviewed — no issues found" ledger naming which reviewers
                ran.
-            3. APPEND to the append-only **Audit log** section (below the table;
+            3. RECORD COVERAGE (which reviewers ran) as a line under the table.
+               VISIBLE DOWNGRADE: if `diff.patch` is entirely inert docs/prose —
+               EVERY changed file matches the allowlist `**.md`/`.markdown`/`.rst`/
+               `.adoc`, `LICENSE` — then the Architecture and
+               DeepSeek reviewers were skipped by CI `paths-ignore` (that is why
+               their comments are absent, NOT because they ran clean). Record it
+               explicitly, e.g. `Architecture + Cross-model (DeepSeek) ⏭️ skipped —
+               low blast radius (docs-only diff)`. If ANY changed file is non-inert,
+               a missing reviewer means it genuinely produced no comment — do NOT
+               claim a blast-radius skip. (See the findings-ledger skill's "Record
+               which reviewers ran" section.)
+            4. APPEND to the append-only **Audit log** section (below the table;
                create it if absent). Add ONE line for THIS run summarizing what
                changed, attributed to the automated actor and dated with the
                contents of today.txt. Format each entry as a markdown list item
@@ -206,10 +217,11 @@ jobs:
                nothing (that just accretes noise). PRESERVE every existing audit
                line verbatim — never rewrite or reorder them (see the
                findings-ledger skill's Audit log section).
-            4. WRITE the COMPLETE updated ledger markdown to
+            5. WRITE the COMPLETE updated ledger markdown to
                `.ledger-inputs/ledger.md`. It MUST begin with the exact line
                `## 📋 Review Findings Ledger` and contain the table (columns:
-               ID | Finding | Source | Severity | Status) followed by the Audit log.
+               ID | Finding | Source | Severity | Status), the coverage line, and
+               the Audit log.
 
             Write ONLY that file. Post nothing (a later step posts it). Do not
             modify code.

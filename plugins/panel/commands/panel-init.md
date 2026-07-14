@@ -85,7 +85,16 @@ architecture-review skills — dependency-direction/hexagonal rubric, complexity
 + refactor roadmap, disciplined high-signal findings, and an ADR/decision lens. It reuses
 the `CLAUDE_CODE_OAUTH_TOKEN` set above, no-ops cleanly without it, and reviews the PR's
 `base..head` diff. The criteria are decades-stable, so the floor doesn't track any
-fast-moving (or differently-licensed) third-party skill. Also vendor
+fast-moving (or differently-licensed) third-party skill.
+
+**Branch-protection caveat (both advisory reviewers).** `architecture-review` and
+`deepseek-review` use `paths-ignore` to right-size away on provably-inert docs/prose diffs
+— a skipped workflow reports **no status at all**. So do NOT mark "Architecture review" or
+"DeepSeek review" as **required** status checks in branch protection: an inert PR would
+wait forever for a check that never reports. Keep them advisory (non-required); the hard
+required check is the deterministic `tdd-gate`, which always runs.
+
+Also vendor
 `scripts/post_sticky_comment.py` → `scripts/post_sticky_comment.py` (idempotent — the same
 shared script the findings ledger uses in step 6): the review's `Post` step calls it to
 post/edit its one sticky comment.
