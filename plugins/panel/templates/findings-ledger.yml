@@ -71,6 +71,21 @@ jobs:
             echo "no open PR for $HEAD_SHA; nothing to do"; echo "SKIP=1" >> "$GITHUB_ENV"; exit 0
           fi
           echo "PR=$PR" >> "$GITHUB_ENV"
+          # DEFER to a current agent-authored ledger. When a /panel supervising
+          # agent already composed the ledger for THIS head SHA (it has richer
+          # context -- the in-session reviews CI can't see), it stamps a sentinel
+          # `<!-- ledger: author=panel-agent sha=<sha> -->`. If present for this
+          # SHA, CI stands down: no re-compose can silently degrade it. CI still
+          # takes over for un-driven PRs and later pushes (stale/absent sentinel).
+          # Read fully THEN grep (no pipe): `grep -q` closes the pipe on match,
+          # which SIGPIPEs `gh` (exit 141) and, under pipefail, would flip the
+          # result to a false negative on a busy PR (lots of comment bytes after
+          # the ledger) -- causing CI to wrongly re-compose over the agent ledger.
+          BODIES=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' 2>/dev/null || true)
+          if grep -qF "ledger: author=panel-agent sha=$HEAD_SHA" <<<"$BODIES"; then
+            echo "agent-authored ledger present for $HEAD_SHA -- CI defers (no re-compose)."
+            echo "SKIP=1" >> "$GITHUB_ENV"; exit 0
+          fi
           # Wait (bounded) until every REVIEWER workflow RUN on this head has
           # completed. Gate on the Actions RUN status (needs actions: read), NOT
           # `gh pr checks` buckets: when a PR's reviewers post no commit status,
@@ -164,12 +179,22 @@ jobs:
                triaged severity, check whether it is pre-existing on the base
                branch (only defects THIS PR introduced can block), and dedupe
                findings multiple reviewers raised into ONE row (list all sources).
+               CAPTURE EVERY FINDING FROM EVERY REVIEWER — a reviewer's
+               "Suggestions", "Nits", "Non-blocking", or "Minor" subsection holds
+               findings too (one row each, severity NIT/SHOULD FIX). Do NOT read
+               only the BLOCKER / "Request changes" list: a reviewer with 6 items
+               yields 6 rows (minus dedup), never 3. Dropping a lower-severity
+               section is as wrong as dropping the reviewer.
             2. MERGE cumulatively into `existing.md`: preserve every prior row and
                its ID, change only Status as findings resolve (✅ Fixed, ❌
-               Rejected, 📋 Deferred → #N), append new findings with the next ID,
-               never drop a row. If existing.md is empty AND nothing survives
-               triage, produce the clean "✅ Reviewed — no issues found" ledger
-               naming which reviewers ran.
+               Rejected), append new findings with the next ID, never drop a row.
+               For a real Deferred/Standing finding you canNOT file an issue here
+               (this job is advisory, has no gh/write scope) — mark it exactly
+               `⚠️ Needs issue`. NEVER write "tracked separately", "see other
+               issue", or a bare/invented `#N`: that falsely reads as handled.
+               If existing.md is empty AND nothing survives triage, produce the
+               clean "✅ Reviewed — no issues found" ledger naming which reviewers
+               ran.
             3. APPEND to the append-only **Audit log** section (below the table;
                create it if absent). Add ONE line for THIS run summarizing what
                changed, attributed to the automated actor and dated with the
@@ -204,6 +229,28 @@ jobs:
       # for posting, and the post is immune to a stale gather-time snapshot).
       # ADVISORY: a missing/malformed file or transient gh error is a loud
       # ::error:: but never fails the build.
+      # Race guard: re-check the sentinel right before posting. The resolve-step
+      # check runs BEFORE the (minutes-long) reviewer wait; a /panel agent may
+      # stamp its ledger DURING that window. Re-checking here honors it and
+      # shrinks the residual race to the unavoidable post-vs-post instant.
+      - name: Re-check agent sentinel before post
+        if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        run: |
+          set -euo pipefail
+          BODIES=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' 2>/dev/null || true)
+          if grep -qF "ledger: author=panel-agent sha=$HEAD_SHA" <<<"$BODIES"; then
+            echo "agent-authored ledger appeared during the wait -- CI defers, not posting."
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
+      # Self-check: a deferred finding must resolve to a real link or the visible
+      # `⚠️ Needs issue` status -- never a vague "tracked separately" placeholder
+      # that reads as handled when it isn't. Advisory (::warning, never blocks).
+      - name: Check ledger for dangling defers
+        if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        run: |
+          if grep -qiE 'tracked separately|tracked elsewhere|see other issue|filed separately' .ledger-inputs/ledger.md 2>/dev/null; then
+            echo "::warning title=Findings ledger::ledger contains a vague 'tracked separately'-style placeholder -- deferred findings must be a real [#N](url) link or '⚠️ Needs issue'."
+          fi
       - name: Post ledger
         if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
         run: |
