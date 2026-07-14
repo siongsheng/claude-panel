@@ -90,6 +90,18 @@ skipped (e.g. single-provider repo with no `DEEPSEEK_API_KEY`), state it explici
 This keeps reduced coverage visible instead of letting a reader assume both families
 reviewed. Never omit a skipped family silently.
 
+A family may be skipped for two distinct reasons — keep both visible and distinct:
+
+- `⏭️ skipped — single-provider mode` — no `DEEPSEEK_API_KEY` (cross-model only).
+- `⏭️ skipped — low blast radius (inert diff)` — CI `paths-ignore` right-sizing on a
+  docs/prose-only diff (every changed file matches `**.md`/`.markdown`/`.rst`/`.txt`/
+  `.adoc`, `docs/**`, `LICENSE`). This can skip **both** the architecture and DeepSeek
+  families — the deterministic gate (`tdd-check`) and the official `claude-code-review`
+  still run. Example coverage line for an inert diff:
+
+> _Reviewers: Claude Code Review (correctness) ✅ · TDD gate ✅ · Architecture +
+> Cross-model (DeepSeek) ⏭️ skipped — low blast radius (docs-only diff, no code changed)._
+
 ## Dedupe across reviewers
 
 When two reviewers (say Claude and DeepSeek) raise the same finding, it is ONE row with
