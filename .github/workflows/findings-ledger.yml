@@ -119,6 +119,9 @@ jobs:
           gh api "repos/$REPO/pulls/$PR/comments?per_page=100"  > .ledger-inputs/review-comments.json
           gh pr diff "$PR" > .ledger-inputs/diff.patch 2>/dev/null \
             || { echo "::warning title=Findings ledger::gh pr diff failed -- ledger will triage without diff context."; : > .ledger-inputs/diff.patch; }
+          # UTC date for the append-only audit log line (the agent has no clock
+          # and must not shell out to git/gh).
+          date -u +%F > .ledger-inputs/today.txt
           # Existing ledger body for the CUMULATIVE merge (the compose agent reads
           # this). The comment id for PATCH is resolved fresh at post time by
           # post_sticky_comment.py, so it's not captured here.
@@ -157,6 +160,7 @@ jobs:
                 /code-review, architecture review, inline comments)
               - diff.patch          : the PR diff, for context
               - existing.md         : the CURRENT ledger body (empty if none yet)
+              - today.txt           : today's UTC date (for the audit log line)
 
             Apply the panel `blocker-triage` and `findings-ledger` skills:
             1. TRIAGE every finding: real vs false (expect ~30-40% false), set the
@@ -169,10 +173,21 @@ jobs:
                never drop a row. If existing.md is empty AND nothing survives
                triage, produce the clean "✅ Reviewed — no issues found" ledger
                naming which reviewers ran.
-            3. WRITE the COMPLETE updated ledger markdown to
+            3. APPEND to the append-only **Audit log** section (below the table;
+               create it if absent). Add ONE line for THIS run summarizing what
+               changed, attributed to the automated actor and dated with the
+               contents of today.txt. Format each entry as a markdown list item
+               whose text is wrapped in single backticks, for example:
+               <today.txt> · auto-ledger (CI) · R1,R2 added; R2 ❌ Rejected
+               Append this line ONLY when a row or status actually changed this
+               run — do NOT add a "no changes" line on a re-run that changed
+               nothing (that just accretes noise). PRESERVE every existing audit
+               line verbatim — never rewrite or reorder them (see the
+               findings-ledger skill's Audit log section).
+            4. WRITE the COMPLETE updated ledger markdown to
                `.ledger-inputs/ledger.md`. It MUST begin with the exact line
-               `## 📋 Review Findings Ledger` and contain the table with columns:
-               ID | Finding | Source | Severity | Status.
+               `## 📋 Review Findings Ledger` and contain the table (columns:
+               ID | Finding | Source | Severity | Status) followed by the Audit log.
 
             Write ONLY that file. Post nothing (a later step posts it). Do not
             modify code.
