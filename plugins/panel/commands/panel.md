@@ -124,11 +124,39 @@ worktrees back, re-run the COMBINED gate (repo test suite + `bin/tdd-check`) on 
 For any finding whose root cause isn't obvious — a failing test, a regression, wrong
 behavior — apply superpowers' `systematic-debugging` before editing, as in step 3.
 
-### 8. Findings ledger
-Invoke the `findings-ledger` skill: maintain exactly ONE "📋 Review Findings Ledger"
+### 8. Findings ledger (background agent — waits for CI, then composes)
+Invoke the `findings-ledger` skill to maintain exactly ONE "📋 Review Findings Ledger"
 comment on the PR — a single table (ID | Finding | Source | Severity | Status), findings
-shared across reviewers deduped into one row. Update it in place; never post follow-up
-comments.
+deduped across reviewers into one row, updated in place, never a follow-up comment.
+
+**The supervising agent — not the CI auto-ledger — is the primary author here.** It has
+strictly more context than the CI job: it holds THIS loop's in-session subagent reviews
+(step 5), which are never posted as PR comments and which the CI ledger therefore cannot
+see. So compose the ledger from BOTH the in-session reviews AND the CI reviewers' comments.
+
+Because the CI reviewers (DeepSeek, architecture, official `/code-review`) finish
+asynchronously, run this as a **background agent** so the loop is not blocked:
+
+1. **Spawn a background agent** (the Agent tool) carrying this loop's in-session findings.
+2. It **waits** (bounded poll on `gh pr checks` / the Actions run status) until the CI
+   reviewer checks complete.
+3. It **gathers** every CI reviewer comment, **merges** them with the in-session findings
+   (dedupe, one row per finding — capture non-blocking Suggestions/Nits too), triages via
+   `blocker-triage`, and composes the cumulative ledger + audit log.
+4. It **stamps the authorship sentinel** as the last line of the ledger body:
+   `<!-- ledger: author=panel-agent sha=<PR head SHA> -->`
+   (resolve the head SHA with `gh pr view <pr> --json headRefOid`). This is how the CI
+   auto-ledger knows to **stand down** — it defers to a current agent-authored ledger for
+   the same head SHA and only takes over when there is none (an un-driven PR, or a later
+   push that changes the SHA). No double-post: both write the ONE sticky comment.
+5. It **posts** via `scripts/post_sticky_comment.py <pr> --marker '## 📋 Review Findings
+   Ledger' --body-file <file>` (path relative to this plugin) — the same deterministic,
+   marker-asserting poster the CI path uses.
+
+The loop does not block on the background agent: proceed to steps 9–10; the ledger lands
+asynchronously and you're notified. (Note: a background agent lives only as long as this
+session — that's exactly why the CI auto-ledger remains as the fallback for PRs no one is
+driving with `/panel`.)
 
 ### 9. Deferred → issues
 Invoke the `deferred-to-issues` skill: every finding that is real and not fixed in this

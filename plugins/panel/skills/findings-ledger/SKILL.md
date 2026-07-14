@@ -113,6 +113,30 @@ then MERGE:
 So the ledger only ever **grows and updates in place** — it is never overwritten with the
 latest review's snapshot.
 
+## Two authors, one comment — the authorship sentinel
+
+The ledger can be written by two mechanisms, and they must not clobber each other:
+
+- The **supervising `/panel` agent** (primary when a loop is running) — it also holds the
+  in-session subagent reviews the CI job can't see, so its ledger is the most complete.
+- The **CI auto-ledger** (fallback) — for PRs no one is driving with `/panel`, and for
+  later pushes.
+
+To hand off cleanly, an agent-authored ledger carries an **authorship sentinel** as the
+last line of the body (an HTML comment — invisible when rendered):
+
+```
+<!-- ledger: author=panel-agent sha=<PR head SHA> -->
+```
+
+The CI auto-ledger checks for it: **if a `panel-agent` sentinel matches the current head
+SHA, CI stands down** (no re-compose, no post) — the agent's ledger is authoritative for
+that commit. CI only takes over when there is no such sentinel (an un-driven PR) or it is
+stale (a later push changed the SHA, so the agent's ledger no longer covers the new code).
+Both write the SAME sticky comment, so there is never a duplicate — the sentinel just
+decides who composes it. This prevents a second, less-informed re-compose from silently
+degrading the agent's richer ledger.
+
 ## Audit log — who changed what, when (append-only)
 
 The ledger is edited in place, so a naive PATCH erases the history of *how it got here* —

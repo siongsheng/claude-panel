@@ -74,6 +74,17 @@ jobs:
             echo "no open PR for $HEAD_SHA; nothing to do"; echo "SKIP=1" >> "$GITHUB_ENV"; exit 0
           fi
           echo "PR=$PR" >> "$GITHUB_ENV"
+          # DEFER to a current agent-authored ledger. When a /panel supervising
+          # agent already composed the ledger for THIS head SHA (it has richer
+          # context -- the in-session reviews CI can't see), it stamps a sentinel
+          # `<!-- ledger: author=panel-agent sha=<sha> -->`. If present for this
+          # SHA, CI stands down: no re-compose can silently degrade it. CI still
+          # takes over for un-driven PRs and later pushes (stale/absent sentinel).
+          if gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' 2>/dev/null \
+               | grep -qF "ledger: author=panel-agent sha=$HEAD_SHA"; then
+            echo "agent-authored ledger present for $HEAD_SHA -- CI defers (no re-compose)."
+            echo "SKIP=1" >> "$GITHUB_ENV"; exit 0
+          fi
           # Wait (bounded) until every REVIEWER workflow RUN on this head has
           # completed. Gate on the Actions RUN status (needs actions: read), NOT
           # `gh pr checks` buckets: when a PR's reviewers post no commit status,
