@@ -44,7 +44,9 @@ use it to do the actual filing. Panel-specific rules layered on top:
   already covers this area, extend it rather than opening a duplicate.
 - Put the resulting issue back into the `findings-ledger` row's Status column as a
   **markdown link** — `📋 Deferred → [#N](url)` / `📌 Standing → [#N](url)` /
-  `🤔 Owner decision → [#N](url)` — so the reader can jump straight to it.
+  `🤔 Owner decision → [#N](url)` — so the reader can jump straight to it. If the row was
+  left `⚠️ Needs issue` by the advisory automated ledger, **upgrade it** to the linked form
+  once you file — clearing a `⚠️ Needs issue` row is exactly this skill's job.
 
 Then file it via the `creating-github-issues` skill — run its dedup search FIRST, then
 create with the panel label above. (No raw `gh issue create` here on purpose: filing

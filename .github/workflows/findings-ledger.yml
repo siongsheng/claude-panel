@@ -167,12 +167,22 @@ jobs:
                triaged severity, check whether it is pre-existing on the base
                branch (only defects THIS PR introduced can block), and dedupe
                findings multiple reviewers raised into ONE row (list all sources).
+               CAPTURE EVERY FINDING FROM EVERY REVIEWER — a reviewer's
+               "Suggestions", "Nits", "Non-blocking", or "Minor" subsection holds
+               findings too (one row each, severity NIT/SHOULD FIX). Do NOT read
+               only the BLOCKER / "Request changes" list: a reviewer with 6 items
+               yields 6 rows (minus dedup), never 3. Dropping a lower-severity
+               section is as wrong as dropping the reviewer.
             2. MERGE cumulatively into `existing.md`: preserve every prior row and
                its ID, change only Status as findings resolve (✅ Fixed, ❌
-               Rejected, 📋 Deferred → #N), append new findings with the next ID,
-               never drop a row. If existing.md is empty AND nothing survives
-               triage, produce the clean "✅ Reviewed — no issues found" ledger
-               naming which reviewers ran.
+               Rejected), append new findings with the next ID, never drop a row.
+               For a real Deferred/Standing finding you canNOT file an issue here
+               (this job is advisory, has no gh/write scope) — mark it exactly
+               `⚠️ Needs issue`. NEVER write "tracked separately", "see other
+               issue", or a bare/invented `#N`: that falsely reads as handled.
+               If existing.md is empty AND nothing survives triage, produce the
+               clean "✅ Reviewed — no issues found" ledger naming which reviewers
+               ran.
             3. APPEND to the append-only **Audit log** section (below the table;
                create it if absent). Add ONE line for THIS run summarizing what
                changed, attributed to the automated actor and dated with the
@@ -207,6 +217,15 @@ jobs:
       # for posting, and the post is immune to a stale gather-time snapshot).
       # ADVISORY: a missing/malformed file or transient gh error is a loud
       # ::error:: but never fails the build.
+      # Self-check: a deferred finding must resolve to a real link or the visible
+      # `⚠️ Needs issue` status -- never a vague "tracked separately" placeholder
+      # that reads as handled when it isn't. Advisory (::warning, never blocks).
+      - name: Check ledger for dangling defers
+        if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
+        run: |
+          if grep -qiE 'tracked separately|tracked elsewhere|see other issue|filed separately' .ledger-inputs/ledger.md 2>/dev/null; then
+            echo "::warning title=Findings ledger::ledger contains a vague 'tracked separately'-style placeholder -- deferred findings must be a real [#N](url) link or '⚠️ Needs issue'."
+          fi
       - name: Post ledger
         if: env.HAS_TOKEN == 'true' && env.SKIP != '1'
         run: |
