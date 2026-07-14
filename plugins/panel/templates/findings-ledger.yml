@@ -175,9 +175,11 @@ jobs:
                changed, attributed to the automated actor and dated with the
                contents of today.txt, e.g.
                `- \`<today.txt> · auto-ledger (CI) · R1,R2 added; R2 ❌ Rejected\``.
-               If nothing changed this run, add a line saying so (`no changes`).
-               PRESERVE every existing audit line verbatim — never rewrite or
-               reorder them (see the findings-ledger skill's Audit log section).
+               Append this line ONLY when a row or status actually changed this
+               run — do NOT add a "no changes" line on a re-run that changed
+               nothing (that just accretes noise). PRESERVE every existing audit
+               line verbatim — never rewrite or reorder them (see the
+               findings-ledger skill's Audit log section).
             4. WRITE the COMPLETE updated ledger markdown to
                `.ledger-inputs/ledger.md`. It MUST begin with the exact line
                `## 📋 Review Findings Ledger` and contain the table (columns:

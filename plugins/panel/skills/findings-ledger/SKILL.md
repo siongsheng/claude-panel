@@ -94,8 +94,10 @@ GitHub's comment-edit view shows only raw body diffs, not a semantic trail. Keep
 This is the accountability layer: "understand, then merge" means a reader can see who
 decided what before the merge.
 
-Under the table, maintain a fenced, append-only list — **never rewrite or reorder existing
-lines; only append**:
+Under the table, maintain an append-only bulleted list (one backticked line per edit) —
+**never rewrite or reorder existing lines; only append**. Do not wrap it in a ``` code
+fence (a fence around the whole ledger body would collide with the sticky-comment marker
+normalization):
 
 > **Audit log**
 > - `2026-07-14 · auto-ledger (CI) · R1,R2 added; R2 ❌ Rejected`

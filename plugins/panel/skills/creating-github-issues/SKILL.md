@@ -18,8 +18,11 @@ structure.
 Before creating anything, search the repo's **open** issues for the same problem:
 
 ```
-gh issue search --repo <owner>/<repo> --state open "<stable keywords>"
+gh search issues "<stable keywords>" --repo <owner>/<repo> --state open
 ```
+
+(or equivalently `gh issue list --repo <owner>/<repo> --search "<keywords>" --state open`.
+Note: there is no `gh issue search` subcommand — use one of these two forms.)
 
 - Key the search on a **stable signal**, not a fuzzy title: the `file:line`, the error
   signature / rule-id, the symbol name, the failing command.
