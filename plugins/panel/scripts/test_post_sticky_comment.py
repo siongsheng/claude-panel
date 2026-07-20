@@ -144,5 +144,49 @@ class TestFindExistingIds(unittest.TestCase):
         self.assertEqual(psc.find_existing_ids(comments, MARK), [2])
 
 
+def _bot(cid, body):
+    return {"id": cid, "body": body, "user": {"login": "github-actions[bot]",
+                                              "type": "Bot"}}
+
+
+def _human(cid, body):
+    return {"id": cid, "body": body, "user": {"login": "siongsheng",
+                                             "type": "User"}}
+
+
+class TestFindStaleDuplicateIds(unittest.TestCase):
+    """Only BOT-authored marker matches (minus the survivor) are safe to delete."""
+
+    def test_returns_bot_duplicates_except_survivor(self):
+        comments = [_bot(2, f"{MARK}\na"), _bot(5, f"{MARK}\nb")]
+        # keep the newest (5); delete the older bot twin (2).
+        self.assertEqual(psc.find_stale_duplicate_ids(comments, MARK, keep_id=5), [2])
+
+    def test_never_deletes_a_human_comment(self):
+        # A human comment that merely quotes the marker must NOT be deleted,
+        # even though it matches -- deletion is irreversible.
+        comments = [_bot(5, f"{MARK}\nledger"), _human(9, f"{MARK}\nquoted!")]
+        self.assertEqual(psc.find_stale_duplicate_ids(comments, MARK, keep_id=5), [])
+
+    def test_excludes_the_survivor(self):
+        comments = [_bot(5, f"{MARK}\na")]
+        self.assertEqual(psc.find_stale_duplicate_ids(comments, MARK, keep_id=5), [])
+
+    def test_ignores_non_matching_bodies(self):
+        comments = [_bot(1, "unrelated"), _bot(2, f"{MARK}\na"), _bot(5, f"{MARK}\nb")]
+        self.assertEqual(psc.find_stale_duplicate_ids(comments, MARK, keep_id=5), [2])
+
+    def test_missing_user_is_safe(self):
+        # A comment with no user object is not provably a bot -> never deleted.
+        comments = [{"id": 2, "body": f"{MARK}\nx"}, _bot(5, f"{MARK}\ny")]
+        self.assertEqual(psc.find_stale_duplicate_ids(comments, MARK, keep_id=5), [])
+
+    def test_none_survivor_deletes_all_bot_matches(self):
+        # keep_id=None (nothing to keep yet) still deletes stray bot twins.
+        comments = [_bot(2, f"{MARK}\na"), _bot(5, f"{MARK}\nb")]
+        self.assertEqual(psc.find_stale_duplicate_ids(comments, MARK, keep_id=None),
+                         [2, 5])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
