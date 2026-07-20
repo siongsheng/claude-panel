@@ -120,6 +120,15 @@ then MERGE:
   longer reports it — a fixed finding stays as a `✅ Fixed <sha>` row.
 - **Change only the Status** of existing rows as things resolve (`Open → ✅ Fixed`,
   `❌ Rejected`, `📋 Deferred → #N`). Keep the ID stable.
+- **A prior real finding the code now satisfies is `✅ Fixed`, NOT `❌ Rejected`.** On a
+  re-run you see only the *current* (fixed) code, where the defect is gone — do not read
+  that absence as "the finding was false." If a previous ledger revision recorded the row
+  as real (Open / BLOCKER / SHOULD FIX), a commit in this PR **fixed** it: mark it
+  `✅ Fixed <sha>` and cite the fixing commit. Reserve `❌ Rejected` for a finding that was
+  **never** valid — the behavior was already correct on the base branch (`git show
+  <base>:path` to confirm) or the reviewer misread the code. Flipping a once-real Open row
+  to Rejected falsely credits real, fixed work as a false positive — the exact dishonest
+  tracking this ledger exists to prevent. (See `blocker-triage`, "Already handled ≠ false".)
 - **Append new findings** as new rows with the next ID.
 - A clean re-run does NOT erase history: a PR that found 8 issues and fixed them all
   reads "8 rows, all ✅ Fixed", not "no issues found".
