@@ -95,18 +95,27 @@ def parse_comments(text: str) -> list[dict]:
     return out
 
 
+def find_existing_ids(comments: list[dict], marker: str) -> list[int]:
+    """Return the ids of ALL comments whose body starts with marker, in order.
+
+    Two independent writers (the CI auto-ledger and the /panel supervising
+    agent) post this comment, and list-then-post is not atomic — so a post-vs-post
+    race can leave more than one. Returning every match lets the caller keep one
+    and DELETE the rest, so the sticky converges back to exactly one on the next
+    post. Null-body-safe (a deleted/empty comment body is skipped).
+    """
+    return [c["id"] for c in comments if (c.get("body") or "").startswith(marker)]
+
+
 def find_existing_id(comments: list[dict], marker: str):
     """Return the id of the LAST comment whose body starts with marker, else None.
 
     Last-match so that if duplicates ever exist, we converge on the newest and
-    keep editing it. Null-body-safe (a deleted/empty comment body is skipped).
+    keep editing it (the older duplicates are deleted by the caller — see
+    find_existing_ids). Null-body-safe (a deleted/empty comment body is skipped).
     """
-    found = None
-    for c in comments:
-        body = c.get("body") or ""
-        if body.startswith(marker):
-            found = c["id"]
-    return found
+    ids = find_existing_ids(comments, marker)
+    return ids[-1] if ids else None
 
 
 def gh(args: list[str]) -> tuple[int, str]:
@@ -158,7 +167,22 @@ def main() -> int:
         print("::error title=Sticky comment::failed to list comments "
               "(advisory, not blocking).")
         return 0
-    existing = find_existing_id(parse_comments(out), args.marker)
+    existing_ids = find_existing_ids(parse_comments(out), args.marker)
+    # Self-heal a raced duplicate: both writers (CI + /panel agent) unblock on
+    # the same reviewer checks and can each POST before seeing the other, leaving
+    # two ledgers. Keep the newest (the one we're about to overwrite anyway) and
+    # DELETE the older twins, so the PR converges back to ONE sticky comment on
+    # this very post -- the duplicate is transient, not permanent. (Previously
+    # only the newest was edited and the stale twin lingered forever.)
+    existing = existing_ids[-1] if existing_ids else None
+    for dup in existing_ids[:-1]:
+        rc, _ = gh(["api", "--method", "DELETE",
+                    f"repos/{repo}/issues/comments/{dup}"])
+        if rc != 0:
+            print(f"::warning title=Sticky comment::failed to delete duplicate "
+                  f"comment {dup} (advisory, not blocking).")
+        else:
+            print(f"deleted duplicate sticky comment {dup} on PR #{args.pr}")
 
     tmp = pathlib.Path(tempfile.gettempdir()) / f"sticky-{args.pr}-{os.getpid()}.md"
     tmp.write_text(body)

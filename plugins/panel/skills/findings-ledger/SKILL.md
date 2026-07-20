@@ -21,7 +21,9 @@ never silence — the reader can tell "reviewed, nothing found" apart from "not 
 
 ## The one comment
 
-Post a single comment titled **📋 Review Findings Ledger** containing one table:
+Post a single comment whose exact first line is the marker **`## 📋 Review Findings
+Ledger`** (the `##` heading prefix is part of the marker — the sticky-comment dedup
+matches on it verbatim), containing one table:
 
 | ID | Finding | Source | Severity | Status |
 |----|---------|--------|----------|--------|
@@ -192,11 +194,20 @@ Rules:
 As fixes land and issues get filed, EDIT the existing ledger comment. Do not post new
 comments the reader must reconcile.
 
-1. Find the comment id:
-   `gh api repos/{owner}/{repo}/issues/{pr}/comments --paginate`
-   and match the one whose body starts with `📋 Review Findings Ledger`.
-2. Patch it:
-   `gh api --method PATCH repos/{owner}/{repo}/issues/comments/{id} -F body=@ledger.md`
+**Always post via the shared poster — never hand-roll the PATCH/POST.** Write the composed
+body to a file and run:
+
+```
+python3 scripts/post_sticky_comment.py <pr> --marker '## 📋 Review Findings Ledger' \
+  --body-file ledger.md
+```
+
+(path relative to this plugin). It matches the existing comment by that exact marker,
+edits it in place or creates it, and — critically — collapses any raced duplicate back to
+ONE comment on every post (both the CI auto-ledger and the `/panel` agent post through it,
+so a hand-rolled PATCH with a slightly different lookup is exactly how a second comment
+gets orphaned). The marker's `##` prefix is significant: a `startswith` lookup for a
+`##`-less `📋 Review Findings Ledger` will NOT match the real body and posts a duplicate.
 
 Post the ledger once review completes — including a clean "no issues found" ledger when
 there are zero findings — and edit it in place thereafter.
