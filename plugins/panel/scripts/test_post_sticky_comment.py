@@ -143,6 +143,19 @@ class TestFindExistingIds(unittest.TestCase):
         comments = [{"id": 1, "body": None}, {"id": 2, "body": f"{MARK}\nx"}]
         self.assertEqual(psc.find_existing_ids(comments, MARK), [2])
 
+    def test_order_follows_input_not_id_value(self):
+        # Contract guard: the result preserves INPUT order (the caller assumes
+        # the input is chronological), NOT ascending id. If GitHub ever returned
+        # comments in a different order, "newest = last" would follow that order,
+        # not the numerically-largest id. Here the higher id (9) comes FIRST in
+        # input, so it is NOT the survivor — 2 is.
+        comments = [
+            {"id": 9, "body": f"{MARK}\nolder-but-higher-id"},
+            {"id": 2, "body": f"{MARK}\nnewer-but-lower-id"},
+        ]
+        self.assertEqual(psc.find_existing_ids(comments, MARK), [9, 2])
+        self.assertEqual(psc.find_existing_id(comments, MARK), 2)
+
 
 def _bot(cid, body):
     return {"id": cid, "body": body, "user": {"login": "github-actions[bot]",
