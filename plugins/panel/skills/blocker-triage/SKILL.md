@@ -30,6 +30,27 @@ For every raised BLOCKER, answer:
 
 State explicitly for each: "Valid BLOCKER — fixing because X" or "False alarm — Y already handles this because Z."
 
+## "Already handled" ≠ "false" when re-triaging a prior finding
+
+Question 2 ("Is it already handled?") has a trap on **re-runs**. When you re-triage a
+finding that a PRIOR ledger revision already recorded as real (Open / BLOCKER / SHOULD
+FIX), and the current code now satisfies it, the finding was **fixed since it was raised**
+— NOT a false positive. Resolve it **✅ Fixed** (cite the fixing commit), never ❌ Rejected.
+
+- **✅ Fixed** — the finding was a real defect and a commit in THIS PR resolved it. The
+  guard/handling you now see in the code *is the fix*. Look for it: `git log -p` or the
+  diff since the finding was raised will show the code that satisfies it.
+- **❌ Rejected** — the finding was **never** a real defect: the behavior was already
+  correct *before* this PR touched it, or the reviewer misread the code. Reserved for
+  first-time triage of a finding that was false when raised.
+
+The distinction is not cosmetic: marking a real, fixed finding "Rejected — false" erases
+the fact that the PR did real work and reads as if the reviewer was wrong. Before writing
+❌ Rejected on a finding that has a prior ledger row, confirm the code was **already
+correct on the base branch** (`git show <base>:path`). If the base branch had the defect
+and the PR added the guard, it is ✅ Fixed. When unsure which it is, prefer ✅ Fixed with
+the commit — it is the honest, verifiable claim.
+
 ## Concrete false-BLOCKER examples (these happen frequently)
 
 | Reviewer says | Reality | Why it's not a BLOCKER |

@@ -191,6 +191,17 @@ jobs:
             2. MERGE cumulatively into `existing.md`: preserve every prior row and
                its ID, change only Status as findings resolve (✅ Fixed, ❌
                Rejected), append new findings with the next ID, never drop a row.
+               FIXED ≠ REJECTED: if a prior row was recorded as real (Open /
+               BLOCKER / SHOULD FIX) and the CURRENT code now satisfies it, a
+               commit in this PR FIXED it — mark it `✅ Fixed` (cite the head sha),
+               NEVER `❌ Rejected`. On a re-run you see only the fixed code; do not
+               read the defect's absence as "the finding was false." Reserve
+               `❌ Rejected` for a finding that was NEVER valid — the behavior was
+               already correct on the base branch (check `diff.patch`: if the PR's
+               diff ADDED the guard/handling that satisfies the finding, it is
+               Fixed, not Rejected) or the reviewer misread the code. Flipping a
+               once-real row to Rejected falsely credits fixed work as a false
+               positive.
                For a real Deferred/Standing finding you canNOT file an issue here
                (this job is advisory, has no gh/write scope) — mark it exactly
                `⚠️ Needs issue`. NEVER write "tracked separately", "see other
