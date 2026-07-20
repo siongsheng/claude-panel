@@ -115,5 +115,34 @@ class TestFindExistingId(unittest.TestCase):
         self.assertEqual(psc.find_existing_id(comments, MARK), 2)
 
 
+class TestFindExistingIds(unittest.TestCase):
+    """Returns ALL marker matches so the caller can collapse raced duplicates."""
+
+    def test_returns_all_matches_in_order(self):
+        comments = [
+            {"id": 2, "body": f"{MARK}\nfirst"},
+            {"id": 1, "body": "unrelated"},
+            {"id": 5, "body": f"{MARK}\nsecond"},
+        ]
+        self.assertEqual(psc.find_existing_ids(comments, MARK), [2, 5])
+
+    def test_survivor_is_newest_extras_are_older(self):
+        # The caller keeps ids[-1] (newest) and deletes ids[:-1] (older twins).
+        ids = psc.find_existing_ids([
+            {"id": 2, "body": f"{MARK}\na"},
+            {"id": 5, "body": f"{MARK}\nb"},
+            {"id": 9, "body": f"{MARK}\nc"},
+        ], MARK)
+        self.assertEqual(ids[-1], 9)
+        self.assertEqual(ids[:-1], [2, 5])
+
+    def test_empty_when_none_match(self):
+        self.assertEqual(psc.find_existing_ids([{"id": 1, "body": "x"}], MARK), [])
+
+    def test_null_body_is_safe(self):
+        comments = [{"id": 1, "body": None}, {"id": 2, "body": f"{MARK}\nx"}]
+        self.assertEqual(psc.find_existing_ids(comments, MARK), [2])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
