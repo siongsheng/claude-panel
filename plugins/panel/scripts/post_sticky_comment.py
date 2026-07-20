@@ -123,7 +123,9 @@ def find_stale_duplicate_ids(comments: list[dict], marker: str,
     (`user.type == "Bot"`): the sticky ledger/reviews are written by CI bots, so
     a human comment that merely quotes the marker line — or any comment with no
     provable bot author — must never be deleted. keep_id (the survivor we PATCH)
-    is always excluded; pass None to sweep every stray bot twin.
+    is always excluded. main() passes find_existing_id's result, which is None
+    only when there are no matches at all (so the loop is a no-op); the None case
+    is kept as a defensive default (sweep every bot twin) rather than special-cased.
     """
     out: list[int] = []
     for c in comments:
@@ -162,7 +164,12 @@ def _repo() -> str:
     repo = os.environ.get("GITHUB_REPOSITORY")
     if repo:
         return repo
-    _, out, _ = gh(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+    rc, out, err = gh(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+    if rc != 0:
+        # Surface the failure instead of returning "" (which would make every
+        # later gh call target repos//… with a confusing error).
+        print(f"::error title=Sticky comment::could not resolve repo "
+              f"(set GITHUB_REPOSITORY or run in a repo): {err.strip()}")
     return out.strip()
 
 
@@ -192,7 +199,9 @@ def main() -> int:
 
     repo = _repo()
     # --jq '.[]' streams one comment object per line (JSONL); see parse_comments
-    # for why plain --paginate on an array is unsafe.
+    # for why plain --paginate on an array is unsafe. The API returns comments in
+    # ascending `created` order (its default), which is what makes "last match =
+    # newest" hold in find_existing_id / find_stale_duplicate_ids.
     rc, out, err = gh(["api", f"repos/{repo}/issues/{args.pr}/comments",
                        "--paginate", "--jq", ".[]"])
     if rc != 0:
@@ -214,9 +223,11 @@ def main() -> int:
                          f"repos/{repo}/issues/comments/{dup}"])
         if rc == 0:
             print(f"deleted duplicate sticky comment {dup} on PR #{args.pr}")
-        elif "not found" in err.lower() or "404" in err:
+        elif "http 404" in err.lower() or "not found" in err.lower():
             # A concurrent run already removed it -- that IS convergence, not an
-            # error, so don't raise a misleading ::warning::.
+            # error, so don't raise a misleading ::warning::. Match gh's actual
+            # "gh: Not Found (HTTP 404)" wording; worst case a wording change just
+            # mislabels a cosmetic warning, never affecting convergence.
             print(f"duplicate comment {dup} already removed (concurrent self-heal).")
         else:
             print(f"::warning title=Sticky comment::failed to delete duplicate "
