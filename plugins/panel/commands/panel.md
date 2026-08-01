@@ -215,7 +215,8 @@ is posted.)
 run `bin/pre-merge-check --post-merge --expected-count <N> --count-cmd "<the repo's
 test-count command>"` on the pulled default branch — a count below the branch's `<N>` means
 commits were lost in the squash (the "merged incomplete" failure). The `--count-cmd` must
-print the count as the last integer on its last line. Grep the fix on the default branch
+print ONLY the count as a bare integer on its last line (e.g. pipe through `| tail -1`) — a
+noisy last line fails safe rather than being mis-read. Grep the fix on the default branch
 too (`--present`/`--absent`).
 
 ## Modes
