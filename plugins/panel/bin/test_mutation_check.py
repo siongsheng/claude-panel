@@ -140,14 +140,34 @@ class TestClassifyRun(unittest.TestCase):
         self.assertFalse(rep.valid)
         self.assertEqual(rep.exit_code, 1)
 
-    def test_missing_selftest_is_invalid(self):
-        # No self-test verdict at all -> we cannot vouch the run executed
-        # validly -> invalid.
+    def test_no_explicit_selftest_relies_on_build_evidence(self):
+        # No explicit self-test: validity rests on build evidence ALONE. All
+        # mutants built (0 indeterminate) -> VALID, even though nothing was
+        # caught. A legitimate coverage gap is an advisory survivor, NEVER a
+        # hard fail — this is the bug two reviewers flagged on PR #50: the old
+        # implicit self-test collapsed "clean run, 0 kills" into "invalid run".
+        rep = mc.classify_run([mutant("m1", True, False)], selftest_verdict=None)
+        self.assertTrue(rep.valid)
+        self.assertEqual(rep.exit_code, 0)
+        self.assertEqual(rep.survivors, ["m1"])
+
+    def test_all_survived_valid_run_is_advisory_not_invalid(self):
+        # A --changed run whose every mutant validly built but survived (a real,
+        # honestly-earned coverage gap) must NOT be indistinguishable from a
+        # corrupted run. Valid, exit 0, survivors carried to the ledger.
         rep = mc.classify_run(
-            [mutant("m1", True, True)],
+            [mutant("m1", True, False), mutant("m2", True, False)],
             selftest_verdict=None)
-        self.assertFalse(rep.valid)
-        self.assertEqual(rep.exit_code, 1)
+        self.assertTrue(rep.valid)
+        self.assertEqual(rep.exit_code, 0)
+        self.assertEqual(rep.survived, 2)
+
+    def test_empty_run_is_valid_not_invalid(self):
+        # Zero mutants (e.g. a docs-only diff on a Rust repo) is a degenerate
+        # but VALID state — nothing to corrupt. It must never hard-fail.
+        rep = mc.classify_run([], selftest_verdict=None)
+        self.assertTrue(rep.valid)
+        self.assertEqual(rep.exit_code, 0)
 
     def test_selftest_indeterminate_voids_the_run(self):
         rep = mc.classify_run(
@@ -157,21 +177,27 @@ class TestClassifyRun(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
-# Implicit self-test: when no explicit known-killable mutant is configured,
-# a run that killed at least one built mutant proves the harness can kill.
+# Crate-name parsing for the build-evidence marker — must read ONLY the
+# [package] table, not a [[bin]] name or a [workspace] root, or the marker
+# points at the wrong crate and every mutant looks INDETERMINATE (PR #50
+# workspace fragility).
 # --------------------------------------------------------------------------
-class TestImplicitSelftest(unittest.TestCase):
-    def test_a_genuine_kill_satisfies_it(self):
+class TestParsePackageName(unittest.TestCase):
+    def test_reads_package_name(self):
         self.assertEqual(
-            mc.implicit_selftest_verdict(
-                [mutant("m1", True, False), mutant("m2", True, True)]),
-            mc.CAUGHT)
+            mc.parse_package_name('[package]\nname = "huat"\nversion = "0.1"\n'),
+            "huat")
 
-    def test_no_genuine_kill_is_none(self):
-        # Nothing was killed and no explicit self-test -> cannot vouch.
-        self.assertIsNone(
-            mc.implicit_selftest_verdict(
-                [mutant("m1", True, False), mutant("m2", False, True)]))
+    def test_ignores_bin_name_before_package(self):
+        toml = '[[bin]]\nname = "the-bin"\n\n[package]\nname = "the-crate"\n'
+        self.assertEqual(mc.parse_package_name(toml), "the-crate")
+
+    def test_workspace_root_without_package_is_empty(self):
+        # A workspace root Cargo.toml has no [package] name — return "" so the
+        # caller falls back / requires --build-marker rather than grabbing a
+        # wrong name.
+        self.assertEqual(
+            mc.parse_package_name('[workspace]\nmembers = ["a", "b"]\n'), "")
 
 
 # --------------------------------------------------------------------------
@@ -264,6 +290,23 @@ class TestRenderReport(unittest.TestCase):
         self.assertIn("::error", out)
         self.assertIn("never-built", out)
         self.assertIn("INVALID", out)
+
+    def test_no_explicit_selftest_is_not_an_error(self):
+        # A valid run with no explicit self-test must not emit an ::error just
+        # because selftest_verdict is None (it relies on build evidence).
+        rep = mc.classify_run([mutant("m1", True, True)], selftest_verdict=None)
+        out = mc.render_report(rep)
+        self.assertNotIn("::error", out)
+
+    def test_valid_run_that_killed_nothing_warns_advisorily(self):
+        # A clean run (all built) that caught 0 mutants and had no explicit
+        # self-test is valid, but worth a NON-blocking heads-up that the harness
+        # might not be asserting.
+        rep = mc.classify_run([mutant("m1", True, False)], selftest_verdict=None)
+        out = mc.render_report(rep)
+        self.assertTrue(rep.valid)
+        self.assertNotIn("::error", out)
+        self.assertIn("::warning", out)
 
 
 if __name__ == "__main__":
