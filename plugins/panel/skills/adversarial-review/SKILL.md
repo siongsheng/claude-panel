@@ -18,7 +18,7 @@ Before reading the code, verify the two-commit TDD pattern:
 
 **TDD false-positive nuance:** A `feat:`-prefixed commit that changes only CSS, config, or other non-behavioral files does not need a preceding test commit. Don't treat a missing test as a BLOCKER there — instead note that the commit should have been prefixed `chore:` or `style:`. Downgrade to a NIT/SHOULD FIX on the commit message, not a BLOCKER on the change.
 
-## Three Review Dimensions
+## Review Dimensions
 
 ### 1. Spec Compliance
 - Does the approach match the decision the spec settled on?
@@ -37,6 +37,31 @@ Before reading the code, verify the two-commit TDD pattern:
 - Security: injection vectors, exposed secrets, missing auth?
 - Error handling: edge cases, null checks, uncaught exceptions?
 - Performance: N+1 queries, blocking calls where async is needed?
+
+### 4. Reachability — does this ever run?
+Every other dimension asks *"is this correct?"* and answers it assuming the code
+executes. This one asks the question those cannot: **does this code path ever run?**
+It is the lens for the highest-severity recurring class — correct, reviewed,
+mutation-tested logic sitting behind a condition that can never hold. It passes every
+other check *because* every other check evaluates the code as if it executes.
+
+For every **new or modified safety / recovery / error path**, demand **positive evidence
+of execution**:
+- **"Wired" ≠ "runs."** Asserting a mechanism is connected is not enough — say how it was
+  confirmed to *execute*: a greppable log line from real output, a production observation
+  (log/metric/incident), or a test that traverses the **real call site**, not just an
+  extracted decision function.
+- **Any permanently-false condition on the path?** A guard gated on an error the library
+  never yields, a timeout that bounds the wrong wait, a branch whose predicate can't be
+  true. (Real case: a duplicate-order guard gated on an error the library converts to
+  stream termination instead — 6 drains over 3 days, 0 executions, while three PRs
+  hardened its internals.)
+- **Ask the dependency, not its docs.** Both real reachability failures were resolved by
+  reading the vendored library *source*; the docs implied the opposite.
+- **No log line asserting the mechanism ran ⇒ a finding.** The expected shape for a new
+  safety path is that "did it run?" is answerable from logs without a code read.
+
+A dead safety mechanism is a BLOCKER, not a nit: it reports a fix that cannot execute.
 
 ## Severity
 
@@ -71,6 +96,12 @@ Emit exactly one final verdict — do not scatter multiple conflicting verdicts 
 
 ### Code Quality
 | Severity | Finding | Location |
+
+### Reachability
+For each new/modified safety/recovery path: how do we know it EXECUTES?
+(log line / production observation / test through the real call site) — or the
+permanently-false condition that keeps it from running. "n/a — no such path in
+this diff" is a valid, explicit answer; silence is not.
 
 ### Verdict
 VERDICT: APPROVED / CHANGES REQUESTED / BLOCKED
