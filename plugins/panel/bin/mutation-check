@@ -391,6 +391,19 @@ def _run_cargo_mutants(root: str, changed: bool, base: str,
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
+def cargo_tools_available(which=None) -> bool:
+    """cargo-mutants runs as the cargo subcommand `cargo mutants`, so BOTH the
+    cargo driver AND the cargo-mutants binary must be on PATH.
+
+    The predicate is injectable (`which`) for testing. NOTE the earlier bug this
+    fixes: `not which("cargo-mutants") and not which("cargo")` skipped only when
+    BOTH were absent — so `cargo` present + `cargo-mutants` absent slipped past
+    the guard and crashed when `cargo mutants` was invoked.
+    """
+    which = which or shutil.which
+    return bool(which("cargo")) and bool(which("cargo-mutants"))
+
+
 def _loud_skip(reason: str) -> int:
     """Skip LOUDLY (never a silent green): a gate that quietly does nothing
     looks identical to success."""
@@ -440,8 +453,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"ecosystem '{eco}' has no configured mutation adapter yet "
             f"(cargo-mutants is implemented; mutmut/StrykerJS are follow-ups). "
             f"NOT passing silently.")
-    if not shutil.which("cargo-mutants") and not shutil.which("cargo"):
-        return _loud_skip("cargo/cargo-mutants not installed on this runner.")
+    if not cargo_tools_available():
+        return _loud_skip("cargo and cargo-mutants must BOTH be installed on "
+                          "this runner (cargo-mutants runs as `cargo mutants`).")
 
     marker = resolve_marker(_cargo_crate_name(root), args.build_marker)
     if marker is None:
