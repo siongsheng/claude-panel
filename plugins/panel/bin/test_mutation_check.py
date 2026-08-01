@@ -17,7 +17,10 @@ tool invocation is isolated plumbing.
 
 import importlib.machinery
 import importlib.util
+import json
 import os
+import shutil
+import tempfile
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -314,6 +317,82 @@ class TestRenderReport(unittest.TestCase):
         self.assertTrue(rep.valid)
         self.assertNotIn("::error", out)
         self.assertIn("::warning", out)
+
+
+# --------------------------------------------------------------------------
+# Integration: exercise the impure adapter (_cargo_results) and the main() CLI
+# exit wiring against REAL files on disk — the plumbing the pure tests stub.
+# No cargo-mutants needed: we hand-write a mutants.out/ the way the tool would,
+# mirroring test_tdd_check.py's TestIntegration bar.
+# --------------------------------------------------------------------------
+class TestCargoAdapterIntegration(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="mutcheck-it-")
+        self.out = os.path.join(self.dir, "mutants.out")
+        os.makedirs(os.path.join(self.out, "log"))
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _write(self, rel, content):
+        p = os.path.join(self.out, rel)
+        with open(p, "w") as fh:
+            fh.write(content)
+
+    def test_build_evidence_and_verdict_from_real_logs(self):
+        outcomes = {"outcomes": [
+            {"scenario": {"Mutant": {"name": "src/a.rs: m1"}},
+             "summary": "MissedMutant", "log_path": "log/a.log"},
+            {"scenario": {"Mutant": {"name": "src/b.rs: m2"}},
+             "summary": "MissedMutant", "log_path": "log/b.log"},
+            {"scenario": {"Mutant": {"name": "src/c.rs: m3"}},
+             "summary": "CaughtMutant", "log_path": "log/c.log"},
+            {"scenario": {"Mutant": {"name": "src/d.rs: m4"}},
+             "summary": "Unviable", "log_path": "log/d.log"},
+            {"scenario": "Baseline", "summary": "Success",
+             "log_path": "log/baseline.log"},
+        ]}
+        self._write("outcomes.json", json.dumps(outcomes))
+        self._write("log/a.log", "Fresh huat v0.1.0\nrunning 5 tests\nok\n")
+        self._write("log/b.log", "Compiling huat v0.1.0\nrunning 5 tests\nok\n")
+        self._write("log/c.log", "Compiling huat v0.1.0\nrunning 5\nFAILED\n")
+        self._write("log/d.log", "error: could not compile\n")
+        self._write("log/baseline.log", "Compiling huat\nok\n")
+
+        results = mc._cargo_results(self.dir, self.out, "Compiling huat")
+        by = {r.name: r for r in results}
+        # Unviable + Baseline are dropped; three real mutants remain.
+        self.assertEqual(set(by), {"src/a.rs: m1", "src/b.rs: m2", "src/c.rs: m3"})
+        # a: only "Fresh" -> never rebuilt -> not built.
+        self.assertFalse(by["src/a.rs: m1"].built)
+        # b: rebuilt, tests passed -> built + survived.
+        self.assertTrue(by["src/b.rs: m2"].built)
+        self.assertFalse(by["src/b.rs: m2"].test_failed)
+        # c: rebuilt, caught.
+        self.assertTrue(by["src/c.rs: m3"].built and by["src/c.rs: m3"].test_failed)
+        # End-to-end: a never built -> one INDETERMINATE -> run INVALID.
+        rep = mc.classify_run(results, selftest_verdict=None)
+        self.assertEqual(rep.indeterminate, 1)
+        self.assertFalse(rep.valid)
+        self.assertEqual(rep.exit_code, 1)
+
+
+class TestMainExitWiring(unittest.TestCase):
+    def test_no_ecosystem_marker_loud_skips_exit_0(self):
+        # main()'s CLI + exit wiring end-to-end: a dir with no Cargo.toml /
+        # pyproject / package.json must loud-skip (exit 0), never hard-fail.
+        d = tempfile.mkdtemp(prefix="mutcheck-skip-")
+        try:
+            with open(os.path.join(d, "README.md"), "w") as fh:
+                fh.write("x\n")
+            rc = mc.main(["--root", d])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        self.assertEqual(rc, 0)
+
+    def test_unreadable_root_errors_exit_2(self):
+        rc = mc.main(["--root", "/no/such/dir/xyz"])
+        self.assertEqual(rc, 2)
 
 
 if __name__ == "__main__":
