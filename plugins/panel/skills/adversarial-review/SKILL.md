@@ -9,6 +9,30 @@ A structured review of a change, ideally performed from a different model or a
 fresh context than the one that wrote the code (a same-context reviewer is
 biased — it saw every step and assumes correctness).
 
+## Pre-Review: Capability check
+
+Before anything else, verify you actually have the tools this review assumes — a
+reviewer launched **without** them can do a partial review and return a confident
+verdict that looks identical to a full one (the same silent-degradation failure as a CI
+reviewer that produces no output yet stays green).
+
+Your **first action** is a capability check, and your verdict block **must** carry the
+result explicitly:
+
+```
+tools: git=<yes/no> gh=<yes/no> network=<yes/no>
+```
+
+- The architecture/spec review needs a **diff source** (`git`, or `gh` for the PR): the
+  inherited-vs-new-debt rule is *unenforceable* without one — you cannot say what the
+  change INTRODUCED if you cannot see the diff. If `git`/`gh` are unavailable, review the
+  checked-out worktree plus the spec and **say so up front**; do not silently review less
+  than you claim.
+- A missing required tool does **not** void the verdict — a worktree-only review still
+  finds real defects. Instead mark the verdict **PARTIAL** and name the dimensions you
+  could not cover. The absence of the `tools:` line is itself a red flag the supervisor
+  must treat as an incomplete review.
+
 ## Pre-Review: TDD Verification
 
 Before reading the code, verify the two-commit TDD pattern:
@@ -82,6 +106,11 @@ Emit exactly one final verdict — do not scatter multiple conflicting verdicts 
 ```
 ## Adversarial Review
 
+### Capability
+tools: git=<yes/no> gh=<yes/no> network=<yes/no>
+(If a required tool is missing, this verdict is PARTIAL — name the dimensions
+it could not cover.)
+
 ### Pre-Review: TDD Check
 - test: commit <hash>
 - feat: commit <hash>
@@ -104,6 +133,10 @@ permanently-false condition that keeps it from running. "n/a — no such path in
 this diff" is a valid, explicit answer; silence is not.
 
 ### Verdict
-VERDICT: APPROVED / CHANGES REQUESTED / BLOCKED
+VERDICT: APPROVED / CHANGES REQUESTED / BLOCKED / PARTIAL (tools missing)
 RISK: LOW / MEDIUM / HIGH
 ```
+
+A **PARTIAL** verdict means a required tool was missing, so some dimensions went
+uncovered — it is not a pass. The supervisor must re-run the reviewer with the missing
+tools before treating the review as complete (see the `/panel` loop, step 5).
