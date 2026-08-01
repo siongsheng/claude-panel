@@ -1,0 +1,47 @@
+# This repo's own copy of templates/mutation-gate.yml — identical except the
+# checker path (this repo keeps bin/ under plugins/panel/). Downstream repos get
+# the generic template via /panel-init. This repo is Python with no Cargo.toml,
+# so the mutation RUN loud-skips (green); the value here is the self-test step,
+# which runs the gate's own unit tests in CI.
+name: Mutation gate
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  mutation-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Dogfood copy — the test file always lives here, so no guard.
+      - name: Self-test mutation-check
+        run: python3 plugins/panel/bin/test_mutation_check.py
+
+      - name: Detect cargo
+        id: eco
+        run: |
+          if [ -f Cargo.toml ]; then echo "cargo=yes" >> "$GITHUB_OUTPUT"; else echo "cargo=no" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Install Rust + cargo-mutants
+        if: steps.eco.outputs.cargo == 'yes'
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          cargo install cargo-mutants --locked
+
+      - name: Run mutation-check (changed lines)
+        run: python3 plugins/panel/bin/mutation-check --changed --base "${{ github.event.pull_request.base.sha }}"
