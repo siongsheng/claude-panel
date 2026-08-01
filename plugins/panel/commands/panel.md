@@ -198,21 +198,25 @@ can't race the compose.
 filed + linked). Then, BEFORE reporting the PR as ready, run the **pre-merge remote-
 verification gate** — local gates prove nothing about the ref that actually merges:
 
-- `bin/pre-merge-check --branch <branch>` (path relative to this plugin) — asserts the
-  local `HEAD` equals the remote branch head (unpushed commits would not merge), and,
-  when a fix has a distinctive string, `--present <pathspec> <needle>` / `--absent
-  <pathspec> <old-line>` to confirm the fix is on the REMOTE ref and the old buggy line is
-  gone. A failure here is a hard stop, exactly like a red `tdd-check`.
-- After the human merges: `bin/pre-merge-check --post-merge --expected-count <N>
-  --count-cmd "<the repo's test-count command>"` on the pulled default branch — a count
-  below the branch's means commits were lost in the squash (the "merged incomplete"
-  failure). Grep the fix on the default branch too.
+- **Now, before reporting the PR ready:** `bin/pre-merge-check --branch <branch>` (path
+  relative to this plugin) — asserts the local `HEAD` equals the remote branch head
+  (unpushed commits would not merge), and, when a fix has a distinctive string, `--present
+  <pathspec> <needle>` / `--absent <pathspec> <old-line>` to confirm the fix is on the
+  REMOTE ref and the old buggy line is gone. A failure here is a hard stop, exactly like a
+  red `tdd-check` (a git error exits 2 — never a silent pass).
 
 Then report the PR link and the ledger summary and **STOP**. Do not merge, and do not start
 any follow-up work until the human merges or explicitly says to continue. (If the human
 wants to move on before the agent settles, report the PR link immediately and note the
 ledger is finalizing asynchronously — but never claim a ledger summary you haven't confirmed
 is posted.)
+
+**On a LATER turn, once the human confirms the merge** (do NOT block or poll for it here):
+run `bin/pre-merge-check --post-merge --expected-count <N> --count-cmd "<the repo's
+test-count command>"` on the pulled default branch — a count below the branch's `<N>` means
+commits were lost in the squash (the "merged incomplete" failure). The `--count-cmd` must
+print the count as the last integer on its last line. Grep the fix on the default branch
+too (`--present`/`--absent`).
 
 ## Modes
 
