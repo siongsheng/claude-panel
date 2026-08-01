@@ -1,0 +1,78 @@
+name: Mutation gate
+
+# Runs the mutation gate on a PR's CHANGED lines. Unlike the advisory review
+# workflows, this one has ONE hard-failure mode -- an INVALID mutation run --
+# and it is a hard failure for the same structural reason bin/tdd-check is: it
+# is a mechanical fact about whether the process executed, not an opinion about
+# the code.
+#
+#   * RUN VALIDITY (fact) -> the job FAILS. A mutant that never recompiled
+#     tested the unmutated binary; a self-test that isn't caught means the
+#     harness isn't killing mutants. Either makes every survivor untrustworthy,
+#     so a corrupted run is worse than no gate -- it must go red, not green.
+#   * SURVIVORS (judgement) -> the job stays GREEN with a ::warning::. Whether a
+#     survivor is a real gap or an equivalent mutant is undecidable, so it is
+#     recorded for a findings-ledger disposition, never blocked on.
+#
+# bin/mutation-check SKIPS LOUDLY (green + ::warning::) on any repo with no
+# configured mutation tool, so vendoring it is harmless on non-Rust repos.
+#
+# Mutation is SLOW (serial by design -- parallelism silently corrupts runs, the
+# lesson this gate encodes). It runs only on cargo repos and only over the diff.
+# Because a skipped/absent tool reports no status, do NOT mark this a *required*
+# check in branch protection unless every PR touches Rust -- keep it as the loud
+# signal it is. A periodic FULL baseline (survivors -> tracked issues) belongs
+# in a separate scheduled workflow, not this per-PR gate.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  mutation-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # bounded; --changed keeps the mutant set small.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # --changed diffs against the merge base, so full history is needed.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Self-test the gate itself in THIS repo's CI (as tdd-gate does): a hard
+      # gate must not be a black box where it is deployed.
+      - name: Self-test mutation-check (if vendored)
+        run: |
+          if [ -f bin/test_mutation_check.py ]; then
+            python3 bin/test_mutation_check.py
+          else
+            echo "::notice::bin/test_mutation_check.py not vendored — re-run /panel-init to enable the mutation-check self-test."
+          fi
+
+      # Only a cargo repo has a working adapter today; on anything else the
+      # script loud-skips (green), so we avoid the multi-minute toolchain
+      # install entirely.
+      - name: Detect cargo
+        id: eco
+        run: |
+          if [ -f Cargo.toml ]; then echo "cargo=yes" >> "$GITHUB_OUTPUT"; else echo "cargo=no" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Install Rust + cargo-mutants
+        if: steps.eco.outputs.cargo == 'yes'
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          cargo install cargo-mutants --locked
+
+      # Exit 1 (invalid run) fails the job by design; survivors exit 0 with a
+      # ::warning::; a non-cargo repo loud-skips green.
+      - name: Run mutation-check (changed lines)
+        run: python3 bin/mutation-check --changed --base "${{ github.event.pull_request.base.sha }}"

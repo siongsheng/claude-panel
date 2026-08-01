@@ -7,6 +7,7 @@ A Claude Code plugin for **prevention-first agentic development**. It is a delib
 - **Inherited-vs-new-debt** (`adversarial-review`) — only issues *introduced* by a change block merge; pre-existing pattern debt gets a tracked issue instead. Plus spec-compliance / architecture / quality dimensions and a single VERDICT.
 - **Cross-model-family review** (`scripts/deepseek_review.py` + Action) — an independent DeepSeek reviewer alongside Claude reviewers, so findings are cross-checked by two model families with different blind spots. Everything else in the ecosystem is Claude-only.
 - **Deterministic two-commit TDD** (`bin/tdd-check`) — verifies a test-only commit is an *ancestor* of its implementation commit and rejects bundled commits. Ancestry-based, so it survives rebase (wall-clock timestamps don't) — a hard gate complementing superpowers' TDD *discipline*.
+- **Mutation gate** (`bin/mutation-check`) — `tdd-check` proves commit *order*; this proves a test would actually *fail* if the code broke. Its one hard-failure mode is a structural fact, not a judgement: an **invalid run** (a mutant that never recompiled — so it silently tested the unmutated binary — or a self-test that wasn't caught) fails like a red `tdd-check`. A surviving mutant is *advisory* — undecidable whether it's a real gap or an equivalent mutant — so it earns a findings-ledger disposition, never a block. Skips loudly on repos with no configured mutation tool.
 
 Plus a **findings-ledger** discipline (one edited-in-place table per PR, with an append-only audit log of who changed what), **creating-github-issues** (dedup-first, template-aware, actionable issue filing), and **deferred→issues** (every real-but-unfixed finding becomes a tracked GitHub issue).
 
@@ -43,7 +44,7 @@ Once wired, the panel runs on every PR without anyone driving a `/panel` session
 
 - **Reviewers post their own findings.** The architecture reviewer edits **one sticky comment** (posting a clean "no issues found" when sound, so a silent reviewer is never mistaken for a clean one), and DeepSeek posts its cross-model review.
 - **The findings-ledger posts itself** once all reviewers finish — a single triaged, cumulative table that merges across re-runs. It composes on a small model and posts deterministically, so it stays cheap.
-- **Advisory, never blocking.** Reviewer/ledger steps surface problems loudly (`::error::`/`::warning::`) but never fail the build; the only hard gate is the deterministic `bin/tdd-check`.
+- **Advisory, never blocking — except two structural facts.** Reviewer/ledger steps and mutation *survivors* surface problems loudly (`::error::`/`::warning::`) but never fail the build. The only things that hard-fail are mechanical facts about the process, not opinions about the code: `bin/tdd-check` (commit ancestry) and a `bin/mutation-check` **invalid run** (a mutant that never recompiled, or an un-caught self-test). Everything judgement-shaped stays advisory.
 
 ## Attribution
 
