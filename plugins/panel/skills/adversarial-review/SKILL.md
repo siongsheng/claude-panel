@@ -132,6 +132,15 @@ For each new/modified safety/recovery path: how do we know it EXECUTES?
 permanently-false condition that keeps it from running. "n/a — no such path in
 this diff" is a valid, explicit answer; silence is not.
 
+### Checked and disproved
+Suspicions you investigated and **disproved** — settled, so the next round does not
+re-litigate them. One line each, WITH the evidence:
+- <suspicion> → No: <mechanism/reason it doesn't hold>.
+This distinguishes "didn't look" from "looked, it's fine"; it is where the expensive
+verification lives (e.g. "confirmed the decimal compare is value-based, not textual");
+and a reviewer that must *write down* why a suspicion was wrong raises fewer false
+blockers. Empty is allowed but must be explicit ("nothing to disprove this round").
+
 ### Verdict
 VERDICT: APPROVED / CHANGES REQUESTED / BLOCKED / PARTIAL (tools missing)
 RISK: LOW / MEDIUM / HIGH

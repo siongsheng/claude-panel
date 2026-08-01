@@ -60,6 +60,21 @@ Prefer having an implementer subagent do the code so the supervising context sta
 clean and can later host an independent reviewer. The implementer does not run the
 review.
 
+**Brief contract — every brief (implementer and fix, step 7) MUST end inviting its own
+correction.** The supervisor is the least-reviewed participant in the loop — nobody
+reviews the brief — so this is the only check on it. End each brief with a required
+report-back section, verbatim in spirit:
+
+> *Assume this brief contains a factual error; previous ones did. The most valuable part
+> of your report is **anything here that was wrong, impossible, or that you deviated
+> from** — a named function that doesn't exist, a quoted line that isn't in the source, a
+> count or threshold that's off, an issue it says to close that isn't actually fixed.*
+
+Without this clause an agent that notices its brief is wrong has no mandate to say so, and
+the cheapest path is to build what it was told. In one session this surfaced a spec telling
+the implementer to close an unfixed issue, an invented source quote, and a wrong threshold —
+all caught only because the brief invited it.
+
 If a test won't pass or behavior is wrong, have the implementer invoke superpowers'
 `systematic-debugging` skill to find the root cause before editing — never guess at
 fixes.
