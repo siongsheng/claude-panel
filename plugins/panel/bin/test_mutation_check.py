@@ -232,6 +232,24 @@ class TestResolveMarker(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
+# cargo-mutants runs as `cargo mutants`, so BOTH binaries must be present.
+# The old check skipped only when BOTH were absent, so `cargo` present +
+# `cargo-mutants` absent slipped through and crashed at run time.
+# --------------------------------------------------------------------------
+class TestCargoToolsAvailable(unittest.TestCase):
+    def test_both_present(self):
+        self.assertTrue(mc.cargo_tools_available(lambda t: "/usr/bin/" + t))
+
+    def test_cargo_mutants_missing_is_unavailable(self):
+        which = lambda t: None if t == "cargo-mutants" else "/usr/bin/cargo"
+        self.assertFalse(mc.cargo_tools_available(which))
+
+    def test_cargo_missing_is_unavailable(self):
+        which = lambda t: None if t == "cargo" else "/usr/bin/cargo-mutants"
+        self.assertFalse(mc.cargo_tools_available(which))
+
+
+# --------------------------------------------------------------------------
 # cargo-mutants outcomes.json parser (pure over a parsed dict).
 # We must re-derive the verdict from build evidence in each mutant's LOG,
 # NOT trust cargo's own summary (which recorded false MissedMutants).
