@@ -109,6 +109,19 @@ cross-model family is **additive and opt-out** (see below):
   coverage — record the skip in the findings ledger so the reduced coverage is visible,
   not silent.
 
+**Capability preflight (every reviewer).** A reviewer subagent can be launched WITHOUT the
+tools its brief assumes, do a partial review, and return a confident verdict that looks
+identical to a full one — the architecture floor has run twice with no `git`/`gh`, unable
+to see the diff its inherited-vs-new-debt rule depends on. So: declare the required tools
+per role in the brief (the architecture/spec reviewer needs a **diff source** — `git` or
+`gh`; the cross-model reviewer needs network + key), require each reviewer's first action
+to be a capability check, and require its verdict to carry an explicit `tools: git=… gh=…`
+line. A reviewer missing a required tool returns a **PARTIAL** verdict (not discarded — a
+worktree-only review still finds real defects), naming the dimensions it could not cover.
+**If a required reviewer came back PARTIAL, re-run it with the missing tools before treating
+the panel as complete** — the absence of the `tools:` line is itself a red flag. (This is
+enforced by the `adversarial-review` skill's Capability check + verdict format.)
+
 The CI-hosted reviewer (the bundled `templates/deepseek-review.yml` Action) also runs
 per-push when a `DEEPSEEK_API_KEY` secret is set; let it. CI must go green (the Action
 no-ops green when no key is set, so single-provider repos are unaffected).
