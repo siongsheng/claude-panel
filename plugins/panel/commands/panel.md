@@ -205,6 +205,12 @@ verification gate** — local gates prove nothing about the ref that actually me
   REMOTE ref and the old buggy line is gone. A failure here is a hard stop, exactly like a
   red `tdd-check` (a git error exits 2 — never a silent pass).
 
+**Record `<N>` — the branch's green test count — now, in the findings ledger** (a
+`Pre-merge: N tests green @ <branch sha>` line), so the later-turn post-merge check below
+has a durable source for `--expected-count`. The number is whatever the repo's own suite
+reported green in step 4; without recording it, the post-merge count-parity check has no
+baseline to compare against.
+
 Then report the PR link and the ledger summary and **STOP**. Do not merge, and do not start
 any follow-up work until the human merges or explicitly says to continue. (If the human
 wants to move on before the agent settles, report the PR link immediately and note the
