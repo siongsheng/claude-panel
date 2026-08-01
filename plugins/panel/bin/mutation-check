@@ -51,6 +51,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import List, Optional, Tuple
 
 # --------------------------------------------------------------------------
@@ -296,7 +297,8 @@ def parse_package_name(toml_text: str) -> str:
             section = s.strip("[]").strip()
             continue
         if section == "package":
-            m = re.match(r'name\s*=\s*"([^"]+)"', s)
+            # TOML allows basic ("…") and literal ('…') strings.
+            m = re.match(r"""name\s*=\s*["']([^"']+)["']""", s)
             if m:
                 return m.group(1)
     return ""
@@ -343,9 +345,12 @@ def _run_cargo_mutants(root: str, changed: bool, base: str,
     out_dir = os.path.join(root, "mutants.out")
     cmd = ["cargo", "mutants", "--jobs", "1",
            "--timeout", str(timeout), "--output", root]
+    diff = None
     if changed:
-        diff = os.path.join(root, ".mutation-diff.patch")
-        with open(diff, "w") as fh:
+        # A tempfile (not a repo-root dotfile) so the run leaves no litter in
+        # the working tree — it is cleaned up in the finally below.
+        fd, diff = tempfile.mkstemp(prefix="mutation-diff-", suffix=".patch")
+        with os.fdopen(fd, "w") as fh:
             r = subprocess.run(["git", "diff", "--merge-base", base],
                                cwd=root, stdout=fh, check=False)
         if r.returncode != 0:
@@ -356,7 +361,11 @@ def _run_cargo_mutants(root: str, changed: bool, base: str,
                   f"{base}` failed (rc={r.returncode}); the changed-line set may "
                   f"be empty and the gate may skip when it should not.")
         cmd += ["--in-diff", diff]
-    subprocess.run(cmd, cwd=root, check=False)
+    try:
+        subprocess.run(cmd, cwd=root, check=False)
+    finally:
+        if diff and os.path.exists(diff):
+            os.remove(diff)
     return out_dir
 
 

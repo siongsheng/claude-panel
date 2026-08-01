@@ -75,4 +75,9 @@ jobs:
       # Exit 1 (invalid run) fails the job by design; survivors exit 0 with a
       # ::warning::; a non-cargo repo loud-skips green.
       - name: Run mutation-check (changed lines)
-        run: python3 bin/mutation-check --changed --base "${{ github.event.pull_request.base.sha }}"
+        run: |
+          if [ -f bin/mutation-check ]; then
+            python3 bin/mutation-check --changed --base "${{ github.event.pull_request.base.sha }}"
+          else
+            echo "::notice::bin/mutation-check not vendored — re-run /panel-init to add the mutation gate (workflow copied without the script)."
+          fi
