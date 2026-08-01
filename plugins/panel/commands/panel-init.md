@@ -46,9 +46,10 @@ repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own 
 resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
 `templates/architecture-review.yml`, `templates/tdd-gate.yml`,
 `templates/findings-ledger.yml`, `scripts/deepseek_review.py`,
-`scripts/post_sticky_comment.py`, `bin/tdd-check`, `bin/test_tdd_check.py` — so init
-triages itself up front instead of crashing mid-run. If any precondition fails, report
-exactly what's missing / what the human must do and stop.
+`scripts/post_sticky_comment.py`, `bin/tdd-check`, `bin/test_tdd_check.py`,
+`bin/pre-merge-check`, `bin/test_pre_merge_check.py` — so init triages itself up front
+instead of crashing mid-run. If any precondition fails, report exactly what's missing /
+what the human must do and stop.
 
 ## The setup
 
@@ -175,6 +176,21 @@ CI cannot see plugin-local paths, so vendor the checker, ITS TESTS, and its work
 If the repo already has a `pull_request` workflow you'd rather extend, add an equivalent
 step there instead of a second workflow (never clobber the existing one). The gate must
 fail a bundled-commit / broken-ancestry branch.
+
+### 5c. Pre-merge remote-verification gate
+Local gates prove nothing about the ref that actually merges — a subagent can commit
+without pushing, and `gh pr merge` then squashes a stale remote head, merging the PR
+incomplete (observed: a safety fix silently absent, caught only by a post-merge test
+count of 763 vs 767). Vendor the gate the `/panel` loop runs at its merge pause (step 10):
+- Copy this plugin's `bin/pre-merge-check` → `bin/pre-merge-check` (`chmod +x`), confirm
+  `python3 bin/pre-merge-check --help`.
+- Copy `bin/test_pre_merge_check.py` → `bin/test_pre_merge_check.py`, confirm
+  `python3 bin/test_pre_merge_check.py` passes in place.
+
+This is a **loop/merge-time** gate, not a CI workflow: it compares the local HEAD against
+the remote branch head and (post-merge) the merged default branch's test count, which the
+supervisor runs around the merge — CI cannot see the pre-push local state. No workflow is
+vendored for it.
 
 ### 6. Auto findings ledger
 Vendor this plugin's `templates/findings-ledger.yml` → `.github/workflows/findings-ledger.yml`.
