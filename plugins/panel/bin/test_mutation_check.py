@@ -199,6 +199,13 @@ class TestParsePackageName(unittest.TestCase):
         self.assertEqual(
             mc.parse_package_name('[workspace]\nmembers = ["a", "b"]\n'), "")
 
+    def test_single_quoted_name(self):
+        # TOML literal strings use single quotes — a crate named with them must
+        # still be detected (else the marker is empty and a valid run would
+        # false-INDETERMINATE).
+        self.assertEqual(
+            mc.parse_package_name("[package]\nname = 'huat'\n"), "huat")
+
 
 # --------------------------------------------------------------------------
 # cargo-mutants outcomes.json parser (pure over a parsed dict).
