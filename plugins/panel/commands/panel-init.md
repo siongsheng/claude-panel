@@ -45,8 +45,9 @@ repo, and the user has admin on the repo (secrets + App install need it). Determ
 repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own vendored
 resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
 `templates/architecture-review.yml`, `templates/tdd-gate.yml`,
-`templates/findings-ledger.yml`, `scripts/deepseek_review.py`,
-`scripts/post_sticky_comment.py`, `bin/tdd-check`, `bin/test_tdd_check.py` — so init
+`templates/findings-ledger.yml`, `templates/mutation-gate.yml`,
+`scripts/deepseek_review.py`, `scripts/post_sticky_comment.py`, `bin/tdd-check`,
+`bin/test_tdd_check.py`, `bin/mutation-check`, `bin/test_mutation_check.py` — so init
 triages itself up front instead of crashing mid-run. If any precondition fails, report
 exactly what's missing / what the human must do and stop.
 
@@ -175,6 +176,26 @@ CI cannot see plugin-local paths, so vendor the checker, ITS TESTS, and its work
 If the repo already has a `pull_request` workflow you'd rather extend, add an equivalent
 step there instead of a second workflow (never clobber the existing one). The gate must
 fail a bundled-commit / broken-ancestry branch.
+
+### 5b. Mutation gate (verifies the tests, not just their order)
+`tdd-check` gates commit *order*; it does not verify a test would fail if the code broke.
+Vendor the mutation gate so that gap is covered:
+- Copy this plugin's `bin/mutation-check` → `bin/mutation-check` (`chmod +x`), and confirm
+  it runs: `python3 bin/mutation-check --help`.
+- Copy `bin/test_mutation_check.py` → `bin/test_mutation_check.py`, and confirm it passes
+  in place: `python3 bin/test_mutation_check.py` (the gate's decision layer is unit-tested,
+  and the workflow self-tests it every run — same discipline as `tdd-check`).
+- Copy `templates/mutation-gate.yml` → `.github/workflows/mutation-gate.yml`.
+
+**It has ONE hard-failure mode, and it is structural, not advisory:** an *invalid run* —
+a mutant that never recompiled (so it tested the unmutated binary) or a self-test that
+wasn't caught — fails the job, exactly as a broken-ancestry branch fails `tdd-check`. A
+surviving mutant is *advisory* (green + `::warning::`); it needs a findings-ledger
+disposition, not remediation. `mutation-check` **skips loudly** (green) on any repo with
+no configured mutation tool (only `cargo-mutants` is wired today), so vendoring it is
+harmless on non-Rust repos. **Do NOT make "Mutation gate" a required status check** in
+branch protection (like the advisory reviewers, a loud-skip reports no status) — keep the
+deterministic `tdd-gate` as the required check.
 
 ### 6. Auto findings ledger
 Vendor this plugin's `templates/findings-ledger.yml` → `.github/workflows/findings-ledger.yml`.

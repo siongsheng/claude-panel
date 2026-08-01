@@ -64,12 +64,29 @@ If a test won't pass or behavior is wrong, have the implementer invoke superpowe
 `systematic-debugging` skill to find the root cause before editing — never guess at
 fixes.
 
-### 4. Deterministic TDD gate
+### 4. Deterministic gates (TDD order + mutation validity)
 Run `bin/tdd-check` (path relative to this plugin) against the branch. A bundled-commit
 finding is a BLOCKER that must be fixed (rewrite history into the test-then-impl shape)
 BEFORE any review starts. Also re-run the repo's own gates (its test suite, linters,
 formatters — discover them from AGENTS.md / CI config) and confirm they are green.
 Never trust the implementer's claim that gates pass; verify independently.
+
+Then run `bin/mutation-check --changed` (path relative to this plugin) on the changed
+lines. `tdd-check` proves the *order* of commits; it does not prove a test would fail if
+the code broke — mutation does. Two outcomes, deliberately different in severity:
+- **Invalid run → BLOCKER.** If the gate reports `RUN VALIDITY: INVALID` (a mutant that
+  never recompiled, so it tested the unmutated binary; or a self-test not caught), the run
+  is untrustworthy and worse than no gate — treat it exactly like a red `tdd-check`. Re-run
+  serially (`cargo-mutants -j 1`) until the run is valid. This is a mechanical fact, so it
+  is a hard gate; nothing else about mutation is.
+- **Survivors → NOT a blocker.** A surviving mutant is a *judgement* (it may be an
+  equivalent mutant, unreachable, or a deliberately-untested path — undecidable in
+  general). Do not fix reflexively; carry each survivor to the ledger for a disposition
+  (step 8). Also ask the implementer "**what else should be mutated?**" — hand-picked
+  mutations only probe the line you just wrote; survivors beyond the brief repeatedly find
+  the real gaps.
+`mutation-check` skips loudly (never silent-green) when the repo has no configured mutation
+tool, so a non-Rust repo is simply recorded as skipped, not falsely passed.
 
 ### 5. Review panel (parallel, independent)
 Open a PR (body in the required five-section format: `## Why`, `## Impact to
@@ -155,7 +172,12 @@ one sticky comment:
    reviewer checks complete.
 3. It **gathers** every CI reviewer comment, **merges** them with the in-session findings
    (dedupe, one row per finding — capture non-blocking Suggestions/Nits too), triages via
-   `blocker-triage`, and composes the cumulative ledger + audit log.
+   `blocker-triage`, and composes the cumulative ledger + audit log. **Every mutation
+   survivor** from step 4 (on the changed lines) also gets a ledger row carrying a
+   **disposition** — `real gap` (→ SHOULD FIX / issue), `equivalent` (behaviourally
+   identical, with the reasoning), or `accepted` (deliberately untested, with the reason).
+   An unclassified survivor is a visible gap, the same way a skipped reviewer is — so a
+   survivor is never silently dropped.
 4. It **files the deferred/standing issues** (step 9's `deferred-to-issues` policy) — the
    in-session agent HAS `gh`, so it creates the real issues and writes linked
    `📋 Deferred → [#N](url)` rows (the `⚠️ Needs issue` placeholder is only the *CI*
