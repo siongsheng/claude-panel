@@ -146,17 +146,13 @@ class TestReport(unittest.TestCase):
         self.assertFalse(rep.ok)
         self.assertEqual(rep.exit_code, 1)
 
-    def test_render_marks_failures_loudly(self):
-        # CI annotations are opt-in (this is a supervisor-run tool, not a CI
-        # gate) — an idle ::error in a terminal log is confusing.
+    def test_render_never_emits_ci_annotation(self):
+        # This is a supervisor-run loop/merge-time tool, NOT a CI gate — it must
+        # not emit GitHub `::error::` annotations at all (the [FAIL] row + exit
+        # code carry the failure). Emitting them contradicts the tool's own
+        # documented design.
         rep = pmc.build_report([pmc.sha_parity_check("local", "remote")])
-        out = pmc.render_report(rep, annotate=True)
-        self.assertIn("::error", out)
-        self.assertIn("FAIL", out)
-
-    def test_render_default_has_no_ci_annotation(self):
-        rep = pmc.build_report([pmc.sha_parity_check("local", "remote")])
-        out = pmc.render_report(rep)  # annotate defaults False
+        out = pmc.render_report(rep)
         self.assertNotIn("::error", out)
         self.assertIn("FAIL", out)  # still human-readable via the [FAIL] row
 
@@ -164,6 +160,27 @@ class TestReport(unittest.TestCase):
         rep = pmc.build_report([pmc.sha_parity_check("a", "a")])
         out = pmc.render_report(rep)
         self.assertIn("PASS", out)
+
+
+# --------------------------------------------------------------------------
+# Test-count parsing — the --count-cmd must print ONLY a bare integer as its
+# last non-empty line. Anything else -> -1, which FAILS parity (safe + loud)
+# rather than silently reading a wrong number out of noisy output.
+# --------------------------------------------------------------------------
+class TestParseCount(unittest.TestCase):
+    def test_bare_integer(self):
+        self.assertEqual(pmc.parse_count("767\n"), 767)
+
+    def test_last_nonempty_line_wins(self):
+        self.assertEqual(pmc.parse_count("building...\n763\n\n"), 763)
+
+    def test_noisy_line_is_rejected_not_misread(self):
+        # "763 passed in 1.23s" must NOT be read as 763/1/23/2 — the contract is
+        # a bare integer, so a noisy last line fails safe.
+        self.assertEqual(pmc.parse_count("763 passed in 1.23s"), -1)
+
+    def test_empty_is_minus_one(self):
+        self.assertEqual(pmc.parse_count(""), -1)
 
 
 # --------------------------------------------------------------------------
