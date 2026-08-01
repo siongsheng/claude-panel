@@ -261,5 +261,25 @@ class TestPostMergeAbsent(unittest.TestCase):
         self.assertTrue(rep.ok)
 
 
+# --------------------------------------------------------------------------
+# A CRASHED --count-cmd (non-zero exit) is an infra failure, not a count
+# mismatch — it must raise (exit 2), never be folded into a check FAIL (exit 1).
+# Same invariant the git plumbing already honors (R1).
+# --------------------------------------------------------------------------
+class TestPostMergeCountCmdError(unittest.TestCase):
+    def test_nonzero_count_cmd_raises_git_error(self):
+        orig = pmc._run
+        pmc._run = lambda cmd: types.SimpleNamespace(
+            returncode=127, stdout="", stderr="pytest: command not found")
+        try:
+            args = pmc.argparse.Namespace(
+                post_merge=True, expected_count=767, count_cmd="pytest",
+                present=None, absent=None, branch=None, remote="origin")
+            with self.assertRaises(pmc.GitError):
+                pmc._post_merge(args)
+        finally:
+            pmc._run = orig
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
