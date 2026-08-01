@@ -33,7 +33,7 @@ Usage:
   pre-merge-check --branch <b> [--remote origin]
       [--present PATHSPEC NEEDLE]... [--absent PATHSPEC NEEDLE]...
   pre-merge-check --post-merge --expected-count N --count-cmd "<shell>"
-      [--present PATHSPEC NEEDLE]...
+      [--present PATHSPEC NEEDLE]... [--absent PATHSPEC NEEDLE]...
 """
 
 import argparse
@@ -127,11 +127,15 @@ def build_report(checks: List[Check]) -> PreMergeReport:
     return PreMergeReport(checks=list(checks))
 
 
-def render_report(report: PreMergeReport) -> str:
+def render_report(report: PreMergeReport, annotate: bool = False) -> str:
+    """Render the report. `annotate` emits GitHub `::error::` lines (CI only) —
+    off by default because this is a supervisor-run tool, not a CI gate, and an
+    idle annotation in a terminal log is just noise; the `[FAIL]` row already
+    conveys the failure."""
     lines = ["pre-merge-check", "=" * 60]
     for c in report.checks:
         lines.append(f"  [{'ok' if c.ok else 'FAIL':>4}]  {c.name}: {c.detail}")
-        if not c.ok:
+        if not c.ok and annotate:
             lines.append(
                 f"::error title=Pre-merge check failed::{c.name}: {c.detail}")
     lines.append("-" * 60)
@@ -142,14 +146,38 @@ def render_report(report: PreMergeReport) -> str:
 # --------------------------------------------------------------------------
 # Git / CI plumbing (impure)
 # --------------------------------------------------------------------------
+class GitError(Exception):
+    """A git command failed. Surfaced as exit 2 — never folded into a check
+    result, so an infrastructure failure (auth, network, bad ref) can NEVER
+    masquerade as a passing check. That masquerade is the exact failure class
+    this gate exists to catch, so its own plumbing must not commit it."""
+
+
 def _run(cmd: List[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
+def _git_out(cmd: List[str]) -> str:
+    """Run a git command that MUST succeed; return stdout, else raise GitError."""
+    r = _run(cmd)
+    if r.returncode != 0:
+        raise GitError(f"`{' '.join(cmd)}` failed (rc={r.returncode}): "
+                       f"{r.stderr.strip()}")
+    return r.stdout
+
+
 def _grep_count(ref: str, pathspec: str, needle: str) -> int:
-    """`git grep -c` the needle on a ref, summed across files. 0 if no match."""
+    """`git grep -c` the needle on a ref, summed across files.
+
+    git grep exit codes: 0 = matches, 1 = no matches, >=2 = ERROR. Only 0/1 are
+    real answers; rc>=2 (bad ref/pathspec, corrupt object) must raise, NOT return
+    0 — a silent 0 would pass an `--absent` check on a broken command.
+    """
     r = _run(["git", "grep", "-c", "--fixed-strings", needle, ref, "--",
               pathspec])
+    if r.returncode >= 2:
+        raise GitError(f"`git grep` failed on {ref} (rc={r.returncode}): "
+                       f"{r.stderr.strip()}")
     total = 0
     for line in r.stdout.splitlines():
         # format: ref:path:count
@@ -161,33 +189,45 @@ def _grep_count(ref: str, pathspec: str, needle: str) -> int:
 
 def _pre_merge(args) -> PreMergeReport:
     checks: List[Check] = []
-    local = _run(["git", "rev-parse", "HEAD"]).stdout.strip()
-    ls = _run(["git", "ls-remote", args.remote, args.branch]).stdout
+    local = _git_out(["git", "rev-parse", "HEAD"]).strip()
+    ls = _git_out(["git", "ls-remote", args.remote, args.branch])
     remote = parse_ls_remote(ls, args.branch)
     checks.append(sha_parity_check(local, remote))
 
-    ref = f"{args.remote}/{args.branch}"
     if args.present or args.absent:
-        _run(["git", "fetch", args.remote, args.branch])
-    for pathspec, needle in (args.present or []):
-        checks.append(presence_check(
-            needle, _grep_count(ref, pathspec, needle), must_be_present=True))
-    for pathspec, needle in (args.absent or []):
-        checks.append(presence_check(
-            needle, _grep_count(ref, pathspec, needle), must_be_present=False))
+        # fetch MUST succeed — else the greps below would run against a stale
+        # local ref and a failure could pass as verified (GitError -> exit 2).
+        _git_out(["git", "fetch", args.remote, args.branch])
+        # Grep the EXACT remote SHA from ls-remote, not the moving ref: binds
+        # verification to the state that passed parity (no ls-remote/fetch race).
+        # If the branch has no remote head, parity already failed — nothing to
+        # anchor a grep to, so skip.
+        if remote:
+            for pathspec, needle in (args.present or []):
+                checks.append(presence_check(
+                    needle, _grep_count(remote, pathspec, needle),
+                    must_be_present=True))
+            for pathspec, needle in (args.absent or []):
+                checks.append(presence_check(
+                    needle, _grep_count(remote, pathspec, needle),
+                    must_be_present=False))
     return build_report(checks)
 
 
 def _post_merge(args) -> PreMergeReport:
     checks: List[Check] = []
-    r = _run(["bash", "-lc", args.count_cmd])
-    m = re.search(r"\d+", r.stdout.strip().splitlines()[-1]
-                  if r.stdout.strip() else "")
+    out = _run(["bash", "-lc", args.count_cmd]).stdout.strip()
+    # The count-cmd must print the count as the last integer on its last line;
+    # an unparseable result becomes -1 and FAILS parity (fails safe, loudly).
+    m = re.search(r"\d+", out.splitlines()[-1] if out else "")
     actual = int(m.group(0)) if m else -1
     checks.append(count_parity_check(args.expected_count, actual))
     for pathspec, needle in (args.present or []):
         checks.append(presence_check(
             needle, _grep_count("HEAD", pathspec, needle), must_be_present=True))
+    for pathspec, needle in (args.absent or []):
+        checks.append(presence_check(
+            needle, _grep_count("HEAD", pathspec, needle), must_be_present=False))
     return build_report(checks)
 
 
@@ -197,28 +237,42 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--remote", default="origin")
     ap.add_argument("--present", nargs=2, action="append",
                     metavar=("PATHSPEC", "NEEDLE"),
-                    help="assert NEEDLE is present in PATHSPEC on the ref")
+                    help="assert NEEDLE is present in PATHSPEC on the ref "
+                         "(works in both modes)")
     ap.add_argument("--absent", nargs=2, action="append",
                     metavar=("PATHSPEC", "NEEDLE"),
-                    help="assert NEEDLE is absent (count 0) in PATHSPEC on the ref")
+                    help="assert NEEDLE is absent (count 0) in PATHSPEC on the "
+                         "ref (works in both modes)")
     ap.add_argument("--post-merge", action="store_true",
                     help="post-merge mode: assert test-count parity on HEAD")
     ap.add_argument("--expected-count", type=int,
-                    help="(post-merge) the branch's test count")
+                    help="(post-merge) the branch's test count. The --count-cmd "
+                         "must print this as the last integer on its last line.")
     ap.add_argument("--count-cmd",
-                    help="(post-merge) shell command printing the test count")
+                    help="(post-merge) shell command printing the test count as "
+                         "the last integer on its last line")
     args = ap.parse_args(argv)
 
-    if args.post_merge:
-        if args.expected_count is None or not args.count_cmd:
-            ap.error("--post-merge requires --expected-count and --count-cmd")
-        report = _post_merge(args)
-    else:
-        if not args.branch:
-            ap.error("pre-merge mode requires --branch")
-        report = _pre_merge(args)
+    try:
+        if args.post_merge:
+            if args.expected_count is None or not args.count_cmd:
+                ap.error("--post-merge requires --expected-count and --count-cmd")
+            report = _post_merge(args)
+        else:
+            if not args.branch:
+                ap.error("pre-merge mode requires --branch")
+            report = _pre_merge(args)
+    except GitError as exc:
+        # A git command failed — exit 2 (distinct from a check FAIL), so an
+        # infra failure is never mistaken for a verified state.
+        msg = f"pre-merge-check: git error: {exc}"
+        if os.environ.get("CI"):
+            print(f"::error title=Pre-merge check::{exc}")
+        print(msg, file=sys.stderr)
+        return 2
 
-    print(render_report(report))
+    # CI annotations only when actually running in CI.
+    print(render_report(report, annotate=bool(os.environ.get("CI"))))
     return report.exit_code
 
 
