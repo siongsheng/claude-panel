@@ -14,6 +14,7 @@ no git. The slow git/CI invocation is isolated plumbing.
 import importlib.machinery
 import importlib.util
 import os
+import types
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -146,15 +147,101 @@ class TestReport(unittest.TestCase):
         self.assertEqual(rep.exit_code, 1)
 
     def test_render_marks_failures_loudly(self):
+        # CI annotations are opt-in (this is a supervisor-run tool, not a CI
+        # gate) — an idle ::error in a terminal log is confusing.
         rep = pmc.build_report([pmc.sha_parity_check("local", "remote")])
-        out = pmc.render_report(rep)
+        out = pmc.render_report(rep, annotate=True)
         self.assertIn("::error", out)
         self.assertIn("FAIL", out)
+
+    def test_render_default_has_no_ci_annotation(self):
+        rep = pmc.build_report([pmc.sha_parity_check("local", "remote")])
+        out = pmc.render_report(rep)  # annotate defaults False
+        self.assertNotIn("::error", out)
+        self.assertIn("FAIL", out)  # still human-readable via the [FAIL] row
 
     def test_render_clean_is_pass(self):
         rep = pmc.build_report([pmc.sha_parity_check("a", "a")])
         out = pmc.render_report(rep)
         self.assertIn("PASS", out)
+
+
+# --------------------------------------------------------------------------
+# _grep_count: a failed `git grep` (rc >= 2) must ERROR, not be folded into a
+# passing "absent" check — the trust-vs-fact hole this gate exists to close.
+# rc == 1 is a legitimate "no matches".
+# --------------------------------------------------------------------------
+class TestGrepCount(unittest.TestCase):
+    def _stub_run(self, returncode, stdout="", stderr=""):
+        return lambda cmd: types.SimpleNamespace(
+            returncode=returncode, stdout=stdout, stderr=stderr)
+
+    def test_rc_ge_2_raises_git_error(self):
+        orig = pmc._run
+        pmc._run = self._stub_run(2, stderr="fatal: bad revision")
+        try:
+            with self.assertRaises(pmc.GitError):
+                pmc._grep_count("HEAD", "src", "needle")
+        finally:
+            pmc._run = orig
+
+    def test_rc_1_is_zero_matches(self):
+        orig = pmc._run
+        pmc._run = self._stub_run(1, stdout="")
+        try:
+            self.assertEqual(pmc._grep_count("HEAD", "src", "needle"), 0)
+        finally:
+            pmc._run = orig
+
+    def test_rc_0_sums_counts(self):
+        orig = pmc._run
+        pmc._run = self._stub_run(0, stdout="abc:src/a.rs:2\nabc:src/b.rs:3\n")
+        try:
+            self.assertEqual(pmc._grep_count("abc", "src", "needle"), 5)
+        finally:
+            pmc._run = orig
+
+
+# --------------------------------------------------------------------------
+# main() surfaces a git failure as exit 2 (like tdd-check's GitError path),
+# never as a misleading pass/fail check row.
+# --------------------------------------------------------------------------
+class TestMainErrorPath(unittest.TestCase):
+    def test_git_error_returns_2(self):
+        orig = pmc._pre_merge
+
+        def boom(args):
+            raise pmc.GitError("git fetch failed")
+
+        pmc._pre_merge = boom
+        try:
+            rc = pmc.main(["--branch", "feature/x"])
+        finally:
+            pmc._pre_merge = orig
+        self.assertEqual(rc, 2)
+
+
+# --------------------------------------------------------------------------
+# --absent must actually be checked in --post-merge mode (was silently dropped).
+# --------------------------------------------------------------------------
+class TestPostMergeAbsent(unittest.TestCase):
+    def test_absent_is_checked_in_post_merge(self):
+        orig_run, orig_grep = pmc._run, pmc._grep_count
+        pmc._run = lambda cmd: types.SimpleNamespace(
+            returncode=0, stdout="767\n", stderr="")
+        pmc._grep_count = lambda ref, pathspec, needle: 0  # old line absent
+        try:
+            args = pmc.argparse.Namespace(
+                post_merge=True, expected_count=767, count_cmd="echo 767",
+                present=None, absent=[["src", "OLD"]], branch=None,
+                remote="origin")
+            rep = pmc._post_merge(args)
+        finally:
+            pmc._run, pmc._grep_count = orig_run, orig_grep
+        names = [c.name for c in rep.checks]
+        self.assertIn("count-parity", names)
+        self.assertIn("grep:OLD", names)
+        self.assertTrue(rep.ok)
 
 
 if __name__ == "__main__":
