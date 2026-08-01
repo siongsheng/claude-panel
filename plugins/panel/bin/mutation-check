@@ -415,9 +415,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not shutil.which("cargo-mutants") and not shutil.which("cargo"):
         return _loud_skip("cargo/cargo-mutants not installed on this runner.")
 
+    crate = _cargo_crate_name(root)
     marker = args.build_marker or (
-        f"Compiling {_cargo_crate_name(root)}" if _cargo_crate_name(root)
-        else "Compiling ")
+        f"Compiling {crate}" if crate else "Compiling ")
     out_dir = _run_cargo_mutants(root, args.changed, args.base, args.timeout)
     try:
         mutants = _cargo_results(root, out_dir, marker)
