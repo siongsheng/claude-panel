@@ -211,6 +211,27 @@ class TestParsePackageName(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
+# resolve_marker: an explicit --build-marker wins; a detected crate gives
+# "Compiling <crate>"; but an UNKNOWN crate must return None (refuse the
+# permissive "Compiling " fallback that could rubber-stamp any build as
+# recompiled) so the caller loud-skips and asks for --build-marker.
+# --------------------------------------------------------------------------
+class TestResolveMarker(unittest.TestCase):
+    def test_explicit_build_marker_wins(self):
+        self.assertEqual(mc.resolve_marker("huat", "Compiling my-lib"),
+                         "Compiling my-lib")
+
+    def test_detected_crate(self):
+        self.assertEqual(mc.resolve_marker("huat", None), "Compiling huat")
+
+    def test_unknown_crate_is_none_not_permissive(self):
+        self.assertIsNone(mc.resolve_marker("", None))
+
+    def test_unknown_crate_with_explicit_marker_ok(self):
+        self.assertEqual(mc.resolve_marker("", "Compiling x"), "Compiling x")
+
+
+# --------------------------------------------------------------------------
 # cargo-mutants outcomes.json parser (pure over a parsed dict).
 # We must re-derive the verdict from build evidence in each mutant's LOG,
 # NOT trust cargo's own summary (which recorded false MissedMutants).
