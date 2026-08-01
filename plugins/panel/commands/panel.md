@@ -64,6 +64,13 @@ If a test won't pass or behavior is wrong, have the implementer invoke superpowe
 `systematic-debugging` skill to find the root cause before editing — never guess at
 fixes.
 
+**Agent contract — push, then report both SHAs.** Every implementer/fix subagent's FINAL
+step is to `git push`, and its output MUST report both the local `git rev-parse HEAD` and
+the remote branch head. The panel gates the local tree but merges the remote ref; a
+subagent that commits without pushing has silently made them diverge. In the session where
+this contract was adopted, every subsequent agent reported the pair and the "merged
+incomplete" failure (step 10) never recurred — cheap and effective.
+
 ### 4. Deterministic TDD gate
 Run `bin/tdd-check` (path relative to this plugin) against the branch. A bundled-commit
 finding is a BLOCKER that must be fixed (rewrite history into the test-then-impl shape)
@@ -188,11 +195,35 @@ can't race the compose.
 
 ### 10. Pause for merge
 **Await the step-8 background agent** (so the ledger is posted and the deferred issues are
-filed + linked), then report the PR link and the ledger summary and **STOP**. Do not merge,
-and do not start any follow-up work until the human merges or explicitly says to continue.
-(If the human wants to move on before the agent settles, report the PR link immediately and
-note the ledger is finalizing asynchronously — but never claim a ledger summary you haven't
-confirmed is posted.)
+filed + linked). Then, BEFORE reporting the PR as ready, run the **pre-merge remote-
+verification gate** — local gates prove nothing about the ref that actually merges:
+
+- **Now, before reporting the PR ready:** `bin/pre-merge-check --branch <branch>` (path
+  relative to this plugin) — asserts the local `HEAD` equals the remote branch head
+  (unpushed commits would not merge), and, when a fix has a distinctive string, `--present
+  <pathspec> <needle>` / `--absent <pathspec> <old-line>` to confirm the fix is on the
+  REMOTE ref and the old buggy line is gone. A failure here is a hard stop, exactly like a
+  red `tdd-check` (a git error exits 2 — never a silent pass).
+
+**Record `<N>` — the branch's green test count — now, in the findings ledger** (a
+`Pre-merge: N tests green @ <branch sha>` line), so the later-turn post-merge check below
+has a durable source for `--expected-count`. The number is whatever the repo's own suite
+reported green in step 4; without recording it, the post-merge count-parity check has no
+baseline to compare against.
+
+Then report the PR link and the ledger summary and **STOP**. Do not merge, and do not start
+any follow-up work until the human merges or explicitly says to continue. (If the human
+wants to move on before the agent settles, report the PR link immediately and note the
+ledger is finalizing asynchronously — but never claim a ledger summary you haven't confirmed
+is posted.)
+
+**On a LATER turn, once the human confirms the merge** (do NOT block or poll for it here):
+run `bin/pre-merge-check --post-merge --expected-count <N> --count-cmd "<the repo's
+test-count command>"` on the pulled default branch — a count below the branch's `<N>` means
+commits were lost in the squash (the "merged incomplete" failure). The `--count-cmd` must
+print ONLY the count as a bare integer on its last line (e.g. pipe through `| tail -1`) — a
+noisy last line fails safe rather than being mis-read. Grep the fix on the default branch
+too (`--present`/`--absent`).
 
 ## Modes
 
