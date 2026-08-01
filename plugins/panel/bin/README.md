@@ -165,3 +165,30 @@ SHOULD-FIX, CSS-feat downgrade, `chore:`-touching-code excluded,
 GREEN-before-RED BLOCKER, multi-language test-file detection) plus integration
 tests that build a throwaway git repo in a tempdir and run the real script for
 passing, Rust-co-located-passing, bundled-failing, and invalid-ref cases.
+
+---
+
+# `bin/pre-merge-check` — pre-merge remote-verification gate
+
+Local gates prove nothing about the ref that actually **merges**. This gate
+verifies the merged state matches the gated one — closing the window where a
+subagent commits without pushing and `gh pr merge` squashes a stale remote head.
+Stdlib-only Python 3.
+
+Every check is a **mechanical fact**, so a failure is a hard stop (exit 1), and a
+git/tooling error is exit 2 — never a silent pass:
+
+- **SHA parity** (`--branch`): local `HEAD` equals the remote branch head from
+  `git ls-remote` — catches unpushed local commits.
+- **Presence / absence** (`--present`/`--absent`, both modes): the fix's
+  distinctive string is on the **remote** ref and the old buggy line is gone.
+  Greps bind to the exact SHA from `ls-remote` (no ls-remote/fetch race).
+- **Count parity** (`--post-merge --expected-count N --count-cmd …`): the merged
+  default branch's test count equals the branch's. The `--count-cmd` must print
+  ONLY a bare integer as its last line and exit 0; a crash raises (exit 2).
+
+This is a **supervisor-run loop/merge-time** tool, NOT a CI gate (CI cannot see
+pre-push local state), so no workflow template is vendored and it emits no CI
+annotations. The pure core (`parse_ls_remote`, `sha_parity_check`,
+`presence_check`, `count_parity_check`, `parse_count`) is unit-tested; the git
+plumbing (`_git_out`, `_grep_count`, `_pre_merge`, `_post_merge`) is isolated.
