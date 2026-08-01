@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""Mutation gate — verify tests would FAIL if the code broke, and prove the
+mutation RUN itself was valid.
+
+Reviewers check whether *claims* are true; mutation testing checks whether the
+*checks* are real. But a mutation run has a dangerous failure mode of its own:
+a mutant that is never recompiled tests the UNMUTATED binary, always "passes",
+and is recorded as a survivor — so a corrupted run looks identical to a
+codebase with poor coverage (observed: 19 of 35 mutants silently tested
+unmutated code). This gate is built around that lesson.
+
+TWO SEVERITIES, ON THE STRUCTURAL-FACT vs JUDGEMENT LINE
+(the same line that earns `bin/tdd-check` its hard-gate status):
+
+  * RUN VALIDITY — a mechanical fact. Every mutant either recompiled or it did
+    not; a known-killable self-test either came back caught or it did not.
+    Invalid run  ->  HARD FAIL (exit 1). This is the only thing the gate blocks
+    on, and it is structural, not an opinion — so the "only tdd-check is a hard
+    gate" philosophy is preserved (the thing blocked on is process validity).
+
+  * SURVIVAL — a judgement. Whether a surviving mutant is a real test gap, an
+    equivalent mutant, or a deliberately-untested path is UNDECIDABLE in
+    general. So a survivor is ADVISORY (exit 0): reported loudly, and each one
+    on the changed lines must get a disposition in the findings ledger
+    (real gap / equivalent / accepted-with-reason) — visible accountability,
+    not required remediation.
+
+The decision layer (build-evidence detection, per-mutant verdict, run validity,
+report) is a set of PURE functions unit-tested with fixtures — see
+test_mutation_check.py. The slow, ecosystem-specific tool invocation is isolated
+plumbing, exactly as tdd-check isolates git from classify_commits.
+
+A gate's worst failure is silence. When no mutation tool is configured for the
+detected ecosystem this script SKIPS LOUDLY (a ::warning:: and a clear message),
+never a silent green pass.
+
+Usage:
+    mutation-check [--changed] [--base <ref>] [--build-marker <s>]
+                   [--selftest caught|survived|indeterminate] [--timeout N]
+"""
+
+import argparse
+import dataclasses
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from typing import List, Optional, Tuple
+
+# --------------------------------------------------------------------------
+# Verdicts
+# --------------------------------------------------------------------------
+CAUGHT = "caught"              # built AND the suite detected the mutation
+SURVIVED = "survived"         # built AND the suite did NOT detect it (judgement)
+INDETERMINATE = "indeterminate"  # never rebuilt -> the result is untrustworthy
+
+
+# --------------------------------------------------------------------------
+# Normalized mutant record (what every ecosystem adapter must produce).
+#   built       -- did the MUTATED code actually recompile? (build evidence)
+#   test_failed -- did the suite fail under this mutant? (only meaningful if
+#                  built; when built is False the unmutated binary was tested)
+# --------------------------------------------------------------------------
+@dataclasses.dataclass
+class MutantResult:
+    name: str
+    built: bool
+    test_failed: bool
+
+
+def has_build_evidence(log: str, marker: str) -> bool:
+    """True iff `log` shows the code was recompiled for this mutant.
+
+    The amendment's core check: cargo prints `Compiling <crate>` when it
+    rebuilds and `Fresh <crate>` when it judged the crate up to date and tested
+    the UNMUTATED binary. `marker` is the recompile signal for the ecosystem
+    (e.g. "Compiling huat"). No marker in the log => no build => the mutant's
+    outcome is an artefact, not a signal.
+    """
+    return bool(marker) and marker in log
+
+
+def classify_mutant(m: MutantResult) -> str:
+    """Per-mutant verdict, BUILD-EVIDENCE FIRST.
+
+    A mutant that never built is INDETERMINATE regardless of the suite result —
+    collapsing it into `survived` is what makes a corrupted run invisible.
+    """
+    if not m.built:
+        return INDETERMINATE
+    return CAUGHT if m.test_failed else SURVIVED
+
+
+def implicit_selftest_verdict(mutants: List[MutantResult]) -> Optional[str]:
+    """Fallback self-test when no explicit known-killable mutant is configured.
+
+    A run that killed at least one BUILT mutant proves the harness can actually
+    kill mutants (if the whole harness were testing unmutated code, nothing
+    would be caught). Returns CAUGHT if such a genuine kill exists, else None —
+    "we cannot vouch this run executed validly."
+    """
+    for m in mutants:
+        if m.built and m.test_failed:
+            return CAUGHT
+    return None
+
+
+# --------------------------------------------------------------------------
+# Run-level report
+# --------------------------------------------------------------------------
+@dataclasses.dataclass
+class RunReport:
+    verdicts: List[Tuple[str, str]]      # (mutant_name, verdict)
+    selftest_verdict: Optional[str]      # CAUGHT/SURVIVED/INDETERMINATE/None
+
+    @property
+    def total(self) -> int:
+        return len(self.verdicts)
+
+    @property
+    def caught(self) -> int:
+        return sum(1 for _, v in self.verdicts if v == CAUGHT)
+
+    @property
+    def survived(self) -> int:
+        return sum(1 for _, v in self.verdicts if v == SURVIVED)
+
+    @property
+    def indeterminate(self) -> int:
+        return sum(1 for _, v in self.verdicts if v == INDETERMINATE)
+
+    @property
+    def survivors(self) -> List[str]:
+        return [n for n, v in self.verdicts if v == SURVIVED]
+
+    @property
+    def indeterminates(self) -> List[str]:
+        return [n for n, v in self.verdicts if v == INDETERMINATE]
+
+    @property
+    def valid(self) -> bool:
+        """A run is valid iff the self-test caught AND no mutant is indeterminate.
+
+        Both are mechanical facts about whether the process executed, not
+        opinions about the code — so failing either is a hard fail.
+        """
+        return self.selftest_verdict == CAUGHT and self.indeterminate == 0
+
+    @property
+    def exit_code(self) -> int:
+        return 0 if self.valid else 1
+
+
+def classify_run(mutants: List[MutantResult],
+                 selftest_verdict: Optional[str]) -> RunReport:
+    """Classify every mutant and pair it with the run's self-test verdict."""
+    verdicts = [(m.name, classify_mutant(m)) for m in mutants]
+    return RunReport(verdicts=verdicts, selftest_verdict=selftest_verdict)
+
+
+def render_report(report: RunReport) -> str:
+    """Human + CI-annotation report. Validity is stated unfalsifiably; an
+    invalid run is a LOUD ::error::, a survivor a ::warning:: (advisory)."""
+    lines: List[str] = []
+    lines.append("mutation-check")
+    lines.append("=" * 60)
+    # The validity summary line — a survivor count alone is unfalsifiable.
+    lines.append(
+        f"{report.total} tested / {report.indeterminate} indeterminate / "
+        f"{report.survived} survived / {report.caught} caught")
+    lines.append(f"self-test: {report.selftest_verdict or 'MISSING'}")
+    lines.append(
+        "RUN VALIDITY: VALID" if report.valid else "RUN VALIDITY: INVALID")
+    lines.append("-" * 60)
+
+    # HARD FAIL surface: an invalid run is worse than no gate, so it is loud.
+    if not report.valid:
+        if report.selftest_verdict != CAUGHT:
+            lines.append(
+                f"::error title=Mutation run invalid::self-test verdict is "
+                f"'{report.selftest_verdict or 'MISSING'}', not 'caught' — the "
+                f"harness is not provably killing mutants, so the run is VOID. "
+                f"Re-run serially (e.g. cargo-mutants -j 1) and confirm a "
+                f"known-killable mutant is caught.")
+        if report.indeterminate:
+            lines.append(
+                f"::error title=Mutation run invalid::{report.indeterminate} "
+                f"mutant(s) never recompiled (tested the UNMUTATED binary) — "
+                f"their outcome is an artefact, NOT a survivor. Indeterminate: "
+                + ", ".join(report.indeterminates))
+
+    # ADVISORY surface: survivors need a ledger disposition, never a fail.
+    if report.survivors:
+        lines.append(
+            f"::warning title=Mutation survivors::{report.survived} survivor(s) "
+            f"on a VALID run — give EACH a disposition in the findings ledger "
+            f"(real gap / equivalent / accepted-with-reason). A survivor is NOT "
+            f"automatically a defect. Survivors: " + ", ".join(report.survivors))
+
+    lines.append("-" * 60)
+    lines.append(
+        f"blocking: {'FAIL (invalid run)' if not report.valid else 'PASS'}   "
+        f"advisory survivors: {report.survived}")
+    lines.append("RESULT: FAIL" if not report.valid else "RESULT: PASS")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+# Ecosystem detection (pure over the set of marker files at the repo root)
+# --------------------------------------------------------------------------
+# Ordered: the first ecosystem whose marker is present wins, so a polyglot repo
+# is classified deterministically. Each maps to the tool the adapter drives.
+_ECOSYSTEMS = [
+    ("cargo", {"Cargo.toml"}),
+    ("python", {"pyproject.toml", "setup.py", "setup.cfg"}),
+    ("js", {"package.json"}),
+]
+
+
+def detect_ecosystem(root_names) -> Optional[str]:
+    """Return 'cargo' / 'python' / 'js' from the marker files present, else None."""
+    names = set(root_names)
+    for eco, markers in _ECOSYSTEMS:
+        if names & markers:
+            return eco
+    return None
+
+
+# --------------------------------------------------------------------------
+# cargo-mutants adapter
+# --------------------------------------------------------------------------
+def parse_cargo_outcomes(outcomes: dict) -> List[dict]:
+    """Extract the per-mutant rows from a parsed cargo-mutants outcomes.json.
+
+    Returns [{name, log_path, summary}]. Non-mutant scenarios (the "Baseline"
+    unmutated build) are dropped. We keep cargo's `summary` only as the
+    test-outcome signal; the BUILD decision is re-derived from each log (cargo's
+    own MissedMutant lied when the mutant was never rebuilt).
+    """
+    rows: List[dict] = []
+    for o in outcomes.get("outcomes", []) or []:
+        scen = o.get("scenario")
+        if not isinstance(scen, dict):
+            continue  # "Baseline" (a bare string) and anything unrecognized
+        mut = scen.get("Mutant")
+        if not isinstance(mut, dict):
+            continue
+        name = mut.get("name")
+        if not name:
+            continue
+        rows.append({
+            "name": name,
+            "log_path": o.get("log_path", ""),
+            "summary": o.get("summary", ""),
+        })
+    return rows
+
+
+# cargo summaries that mean the suite DETECTED the mutant (given it built).
+_CARGO_KILLED = {"CaughtMutant", "Timeout"}
+# cargo could not even type-check this mutant: not a testable mutation, skip it.
+_CARGO_UNVIABLE = {"Unviable"}
+
+
+def _cargo_crate_name(root: str) -> str:
+    """Best-effort crate name from Cargo.toml, for the `Compiling <crate>` marker."""
+    try:
+        with open(os.path.join(root, "Cargo.toml")) as fh:
+            text = fh.read()
+    except OSError:
+        return ""
+    m = re.search(r'(?m)^\s*name\s*=\s*"([^"]+)"', text)
+    return m.group(1) if m else ""
+
+
+def _cargo_results(root: str, out_dir: str,
+                   marker: str) -> List[MutantResult]:
+    """Turn cargo-mutants' output dir into normalized MutantResults."""
+    with open(os.path.join(out_dir, "outcomes.json")) as fh:
+        outcomes = json.load(fh)
+    results: List[MutantResult] = []
+    for row in parse_cargo_outcomes(outcomes):
+        if row["summary"] in _CARGO_UNVIABLE:
+            continue  # can't be built by construction; not a coverage signal
+        log = ""
+        if row["log_path"]:
+            try:
+                with open(os.path.join(out_dir, row["log_path"])) as lf:
+                    log = lf.read()
+            except OSError:
+                log = ""
+        built = has_build_evidence(log, marker)
+        test_failed = row["summary"] in _CARGO_KILLED
+        results.append(MutantResult(row["name"], built=built,
+                                    test_failed=test_failed))
+    return results
+
+
+def _run_cargo_mutants(root: str, changed: bool, base: str,
+                       timeout: int) -> str:
+    """Invoke cargo-mutants (serial by default per the amendment) and return
+    its output directory. `--in-diff` restricts to lines changed since `base`
+    when --changed (the merge base with `base`, so unrelated main commits since
+    the branch point are not re-mutated)."""
+    out_dir = os.path.join(root, "mutants.out")
+    cmd = ["cargo", "mutants", "--jobs", "1",
+           "--timeout", str(timeout), "--output", root]
+    if changed:
+        diff = os.path.join(root, ".mutation-diff.patch")
+        with open(diff, "w") as fh:
+            subprocess.run(["git", "diff", "--merge-base", base],
+                           cwd=root, stdout=fh, check=False)
+        cmd += ["--in-diff", diff]
+    subprocess.run(cmd, cwd=root, check=False)
+    return out_dir
+
+
+# --------------------------------------------------------------------------
+# CLI
+# --------------------------------------------------------------------------
+def _loud_skip(reason: str) -> int:
+    """Skip LOUDLY (never a silent green): a gate that quietly does nothing
+    looks identical to success."""
+    print(f"::warning title=Mutation gate skipped::{reason}")
+    print(f"mutation-check: SKIPPED (loudly) — {reason}")
+    return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="mutation-check",
+        description="Mutation gate: hard-fail on an INVALID run, advisory on "
+                    "survivors.")
+    ap.add_argument("--changed", action="store_true",
+                    help="mutate only lines in the diff vs HEAD~1 (PR mode)")
+    ap.add_argument("--base", default="HEAD~1",
+                    help="base ref for --changed diff (default: HEAD~1)")
+    ap.add_argument("--build-marker", default=None,
+                    help="recompile signal (default: 'Compiling <crate>')")
+    ap.add_argument("--selftest", default=None,
+                    choices=[CAUGHT, SURVIVED, INDETERMINATE],
+                    help="explicit known-killable self-test verdict; if omitted "
+                         "an implicit self-test (any genuine kill) is used")
+    ap.add_argument("--timeout", type=int, default=120,
+                    help="per-mutant timeout in seconds (a mutant can hang)")
+    ap.add_argument("--root", default=".", help="repo root (default: cwd)")
+    args = ap.parse_args(argv)
+
+    root = os.path.abspath(args.root)
+    try:
+        root_names = set(os.listdir(root))
+    except OSError as exc:
+        print(f"mutation-check: error: cannot read {root}: {exc}",
+              file=sys.stderr)
+        return 2
+
+    eco = detect_ecosystem(root_names)
+    if eco is None:
+        return _loud_skip(
+            "no ecosystem marker (Cargo.toml / pyproject.toml / package.json) "
+            "found — no mutation tool to run.")
+    if eco != "cargo":
+        return _loud_skip(
+            f"ecosystem '{eco}' has no configured mutation adapter yet "
+            f"(cargo-mutants is implemented; mutmut/StrykerJS are follow-ups). "
+            f"NOT passing silently.")
+    if not shutil.which("cargo-mutants") and not shutil.which("cargo"):
+        return _loud_skip("cargo/cargo-mutants not installed on this runner.")
+
+    marker = args.build_marker or (
+        f"Compiling {_cargo_crate_name(root)}" if _cargo_crate_name(root)
+        else "Compiling ")
+    out_dir = _run_cargo_mutants(root, args.changed, args.base, args.timeout)
+    try:
+        mutants = _cargo_results(root, out_dir, marker)
+    except (OSError, json.JSONDecodeError) as exc:
+        # Could not read the tool's own output: that is an invalid run, not a
+        # pass. Loud, and non-zero.
+        print(f"::error title=Mutation run invalid::could not read "
+              f"cargo-mutants output: {exc}")
+        return 1
+
+    selftest = args.selftest or implicit_selftest_verdict(mutants)
+    report = classify_run(mutants, selftest)
+    print(render_report(report))
+    return report.exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
