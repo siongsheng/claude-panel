@@ -188,14 +188,23 @@ Vendor the mutation gate so that gap is covered:
 - Copy `templates/mutation-gate.yml` → `.github/workflows/mutation-gate.yml`.
 
 **It has ONE hard-failure mode, and it is structural, not advisory:** an *invalid run* —
-a mutant that never recompiled (so it tested the unmutated binary) or a self-test that
-wasn't caught — fails the job, exactly as a broken-ancestry branch fails `tdd-check`. A
-surviving mutant is *advisory* (green + `::warning::`); it needs a findings-ledger
-disposition, not remediation. `mutation-check` **skips loudly** (green) on any repo with
-no configured mutation tool (only `cargo-mutants` is wired today), so vendoring it is
-harmless on non-Rust repos. **Do NOT make "Mutation gate" a required status check** in
-branch protection (like the advisory reviewers, a loud-skip reports no status) — keep the
-deterministic `tdd-gate` as the required check.
+a mutant that never recompiled (so it tested the unmutated binary), or a configured
+`--selftest` mutant that wasn't caught — fails the job, exactly as a broken-ancestry
+branch fails `tdd-check`. A surviving mutant is *advisory* (green + `::warning::`); it
+needs a findings-ledger disposition, not remediation, and a run that legitimately mutates
+nothing (a docs/config-only diff on a Rust repo) **skips loudly** (green), never fails.
+`mutation-check` also skips loudly on any repo with no configured mutation tool (only
+`cargo-mutants` is wired today), so vendoring it is harmless on non-Rust repos. **In a
+Cargo *workspace*, set `--build-marker "Compiling <sub-crate>"`** in the workflow — the
+default marker is the root `[package]` name, which won't match a mutated sub-crate's log.
+
+**Do NOT make "Mutation gate" a required status check** in branch protection — but note
+the mechanism differs from the advisory reviewers: unlike `architecture-review`/
+`deepseek-review` (which `paths-ignore` themselves out and report *no* status), the
+mutation gate has no `paths-ignore` — it always triggers and exits 0 on a skip, so it
+*does* report a green status. The reason not to require it is simply that it is a no-op on
+most diffs (and absent on non-cargo repos), not a "waits forever with no status" hazard.
+Keep the deterministic `tdd-gate` as the required check.
 
 ### 6. Auto findings ledger
 Vendor this plugin's `templates/findings-ledger.yml` → `.github/workflows/findings-ledger.yml`.
