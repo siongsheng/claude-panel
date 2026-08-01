@@ -38,7 +38,6 @@ Usage:
 
 import argparse
 import dataclasses
-import os
 import re
 import subprocess
 import sys
@@ -127,17 +126,30 @@ def build_report(checks: List[Check]) -> PreMergeReport:
     return PreMergeReport(checks=list(checks))
 
 
-def render_report(report: PreMergeReport, annotate: bool = False) -> str:
-    """Render the report. `annotate` emits GitHub `::error::` lines (CI only) —
-    off by default because this is a supervisor-run tool, not a CI gate, and an
-    idle annotation in a terminal log is just noise; the `[FAIL]` row already
-    conveys the failure."""
+def parse_count(output: str) -> int:
+    """Test count from a `--count-cmd`'s output.
+
+    The contract is deliberately strict: the command must print ONLY the integer
+    count as its last non-empty line. A noisy last line ("763 passed in 1.23s")
+    is rejected to -1 rather than mis-read (first/last digit run is ambiguous and
+    wrong), so the count-parity check fails SAFE and LOUD, never silently on a
+    wrong number.
+    """
+    for line in reversed(output.splitlines()):
+        s = line.strip()
+        if not s:
+            continue
+        return int(s) if re.fullmatch(r"\d+", s) else -1
+    return -1
+
+
+def render_report(report: PreMergeReport) -> str:
+    """Render the report as plain text. This is a supervisor-run loop/merge-time
+    tool, NOT a CI gate, so it emits no GitHub `::error::` annotations — the
+    `[FAIL]` row and the exit code carry the outcome."""
     lines = ["pre-merge-check", "=" * 60]
     for c in report.checks:
         lines.append(f"  [{'ok' if c.ok else 'FAIL':>4}]  {c.name}: {c.detail}")
-        if not c.ok and annotate:
-            lines.append(
-                f"::error title=Pre-merge check failed::{c.name}: {c.detail}")
     lines.append("-" * 60)
     lines.append("RESULT: PASS" if report.ok else "RESULT: FAIL")
     return "\n".join(lines)
@@ -216,11 +228,8 @@ def _pre_merge(args) -> PreMergeReport:
 
 def _post_merge(args) -> PreMergeReport:
     checks: List[Check] = []
-    out = _run(["bash", "-lc", args.count_cmd]).stdout.strip()
-    # The count-cmd must print the count as the last integer on its last line;
-    # an unparseable result becomes -1 and FAILS parity (fails safe, loudly).
-    m = re.search(r"\d+", out.splitlines()[-1] if out else "")
-    actual = int(m.group(0)) if m else -1
+    out = _run(["bash", "-lc", args.count_cmd]).stdout
+    actual = parse_count(out)
     checks.append(count_parity_check(args.expected_count, actual))
     for pathspec, needle in (args.present or []):
         checks.append(presence_check(
@@ -246,11 +255,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--post-merge", action="store_true",
                     help="post-merge mode: assert test-count parity on HEAD")
     ap.add_argument("--expected-count", type=int,
-                    help="(post-merge) the branch's test count. The --count-cmd "
-                         "must print this as the last integer on its last line.")
+                    help="(post-merge) the branch's test count")
     ap.add_argument("--count-cmd",
-                    help="(post-merge) shell command printing the test count as "
-                         "the last integer on its last line")
+                    help="(post-merge) shell command that prints ONLY the test "
+                         "count as a bare integer on its last line (e.g. pipe "
+                         "through `| tail -1`); a noisy line fails safe")
     args = ap.parse_args(argv)
 
     try:
@@ -265,14 +274,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     except GitError as exc:
         # A git command failed — exit 2 (distinct from a check FAIL), so an
         # infra failure is never mistaken for a verified state.
-        msg = f"pre-merge-check: git error: {exc}"
-        if os.environ.get("CI"):
-            print(f"::error title=Pre-merge check::{exc}")
-        print(msg, file=sys.stderr)
+        print(f"pre-merge-check: git error: {exc}", file=sys.stderr)
         return 2
 
-    # CI annotations only when actually running in CI.
-    print(render_report(report, annotate=bool(os.environ.get("CI"))))
+    print(render_report(report))
     return report.exit_code
 
 
