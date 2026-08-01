@@ -228,8 +228,15 @@ def _pre_merge(args) -> PreMergeReport:
 
 def _post_merge(args) -> PreMergeReport:
     checks: List[Check] = []
-    out = _run(["bash", "-lc", args.count_cmd]).stdout
-    actual = parse_count(out)
+    r = _run(["bash", "-lc", args.count_cmd])
+    if r.returncode != 0:
+        # A crashed count-cmd (bad env, missing dep, shell error) is an INFRA
+        # failure, not a count mismatch — raise (exit 2) so it can never
+        # masquerade as a real "the merged state differs" finding (exit 1). Same
+        # invariant _git_out/_grep_count enforce for git.
+        raise GitError(f"--count-cmd exited {r.returncode} (expected it to print "
+                       f"a bare integer): {r.stderr.strip()}")
+    actual = parse_count(r.stdout)
     checks.append(count_parity_check(args.expected_count, actual))
     for pathspec, needle in (args.present or []):
         checks.append(presence_check(
@@ -259,7 +266,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--count-cmd",
                     help="(post-merge) shell command that prints ONLY the test "
                          "count as a bare integer on its last line (e.g. pipe "
-                         "through `| tail -1`); a noisy line fails safe")
+                         "through `| tail -1`) and exits 0; a noisy line fails "
+                         "safe, a non-zero exit is an infra error (exit 2)")
     args = ap.parse_args(argv)
 
     try:
