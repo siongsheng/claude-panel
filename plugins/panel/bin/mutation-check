@@ -361,9 +361,12 @@ def _run_cargo_mutants(root: str, changed: bool, base: str,
     its output directory. `--in-diff` restricts to lines changed since `base`
     when --changed (the merge base with `base`, so unrelated main commits since
     the branch point are not re-mutated)."""
+    # cargo-mutants creates `mutants.out` in its cwd by default; we set cwd=root
+    # below, so it lands at <root>/mutants.out — which out_dir points to. (We do
+    # NOT pass `--output root`: it would be equivalent — `--output` sets the
+    # PARENT of mutants.out — but the redundancy reads like a path mismatch.)
     out_dir = os.path.join(root, "mutants.out")
-    cmd = ["cargo", "mutants", "--jobs", "1",
-           "--timeout", str(timeout), "--output", root]
+    cmd = ["cargo", "mutants", "--jobs", "1", "--timeout", str(timeout)]
     diff = None
     if changed:
         # A tempfile (not a repo-root dotfile) so the run leaves no litter in
