@@ -313,6 +313,25 @@ def _cargo_crate_name(root: str) -> str:
         return ""
 
 
+def resolve_marker(crate: str, build_marker: Optional[str]) -> Optional[str]:
+    """The build-evidence marker to grep for, or None if it can't be resolved
+    SAFELY.
+
+    An explicit `--build-marker` always wins. A detected `[package]` name gives
+    `Compiling <crate>`. But an UNKNOWN crate name must NOT fall back to a bare
+    `"Compiling "` — that substring matches ANY crate's compile line (a
+    dependency rebuild), so it could rubber-stamp an un-rebuilt mutant as
+    `built` and hide a corrupted run. Returning None makes the caller loud-skip
+    and ask for `--build-marker` (the workspace case) rather than trust a
+    permissive marker.
+    """
+    if build_marker:
+        return build_marker
+    if crate:
+        return f"Compiling {crate}"
+    return None
+
+
 def _cargo_results(root: str, out_dir: str,
                    marker: str) -> List[MutantResult]:
     """Turn cargo-mutants' output dir into normalized MutantResults."""
@@ -424,9 +443,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not shutil.which("cargo-mutants") and not shutil.which("cargo"):
         return _loud_skip("cargo/cargo-mutants not installed on this runner.")
 
-    crate = _cargo_crate_name(root)
-    marker = args.build_marker or (
-        f"Compiling {crate}" if crate else "Compiling ")
+    marker = resolve_marker(_cargo_crate_name(root), args.build_marker)
+    if marker is None:
+        return _loud_skip(
+            "could not determine the crate name from [package] (a Cargo "
+            "workspace root?). Refusing to fall back to a permissive "
+            "'Compiling ' marker — it could rubber-stamp an un-rebuilt mutant "
+            "as built and hide a corrupted run. Pass --build-marker "
+            "'Compiling <sub-crate>' to enable the gate here.")
     out_dir = _run_cargo_mutants(root, args.changed, args.base, args.timeout)
     try:
         mutants = _cargo_results(root, out_dir, marker)
