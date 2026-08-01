@@ -12,11 +12,15 @@ unmutated code). This gate is built around that lesson.
 TWO SEVERITIES, ON THE STRUCTURAL-FACT vs JUDGEMENT LINE
 (the same line that earns `bin/tdd-check` its hard-gate status):
 
-  * RUN VALIDITY — a mechanical fact. Every mutant either recompiled or it did
-    not; a known-killable self-test either came back caught or it did not.
-    Invalid run  ->  HARD FAIL (exit 1). This is the only thing the gate blocks
-    on, and it is structural, not an opinion — so the "only tdd-check is a hard
-    gate" philosophy is preserved (the thing blocked on is process validity).
+  * RUN VALIDITY — a mechanical fact. Build evidence is the primary guard: every
+    mutant either recompiled or it did not, and one that did not is INDETERMINATE
+    (never a survivor). An OPTIONAL, stronger guard is a known-killable self-test
+    (--selftest) that must come back caught. Invalid run  ->  HARD FAIL (exit 1).
+    Validity does NOT require this run to have killed anything — a clean run where
+    every mutant built but survived is an honest coverage gap (advisory), not a
+    corrupted run. This is the only thing the gate blocks on, and it is
+    structural, not an opinion — so the "only tdd-check is a hard gate"
+    philosophy is preserved (the thing blocked on is process validity).
 
   * SURVIVAL — a judgement. Whether a surviving mutant is a real test gap, an
     equivalent mutant, or a deliberately-untested path is UNDECIDABLE in
@@ -93,18 +97,6 @@ def classify_mutant(m: MutantResult) -> str:
     return CAUGHT if m.test_failed else SURVIVED
 
 
-def implicit_selftest_verdict(mutants: List[MutantResult]) -> Optional[str]:
-    """Fallback self-test when no explicit known-killable mutant is configured.
-
-    A run that killed at least one BUILT mutant proves the harness can actually
-    kill mutants (if the whole harness were testing unmutated code, nothing
-    would be caught). Returns CAUGHT if such a genuine kill exists, else None —
-    "we cannot vouch this run executed validly."
-    """
-    for m in mutants:
-        if m.built and m.test_failed:
-            return CAUGHT
-    return None
 
 
 # --------------------------------------------------------------------------
@@ -141,12 +133,22 @@ class RunReport:
 
     @property
     def valid(self) -> bool:
-        """A run is valid iff the self-test caught AND no mutant is indeterminate.
+        """A run is valid iff no mutant is INDETERMINATE and any EXPLICIT
+        self-test was caught.
 
-        Both are mechanical facts about whether the process executed, not
-        opinions about the code — so failing either is a hard fail.
+        Build evidence is the primary validity guard: an indeterminate mutant
+        (one that never recompiled) makes the run untrustworthy. A self-test is
+        an OPTIONAL, stronger guard — when a known-killable mutant's verdict is
+        supplied (`--selftest`), it must be `CAUGHT`; a `None` verdict means no
+        self-test was configured and validity rests on build evidence alone.
+
+        Crucially, validity does NOT require that this run killed anything: a
+        clean run where every mutant built but survived is a real coverage gap
+        (an advisory survivor), not a corrupted run. Conflating the two is the
+        bug two reviewers caught on PR #50 — it hard-failed honest coverage gaps.
         """
-        return self.selftest_verdict == CAUGHT and self.indeterminate == 0
+        selftest_ok = self.selftest_verdict in (None, CAUGHT)
+        return self.indeterminate == 0 and selftest_ok
 
     @property
     def exit_code(self) -> int:
@@ -170,19 +172,22 @@ def render_report(report: RunReport) -> str:
     lines.append(
         f"{report.total} tested / {report.indeterminate} indeterminate / "
         f"{report.survived} survived / {report.caught} caught")
-    lines.append(f"self-test: {report.selftest_verdict or 'MISSING'}")
+    lines.append(
+        f"self-test: {report.selftest_verdict or 'not configured (build-evidence only)'}")
     lines.append(
         "RUN VALIDITY: VALID" if report.valid else "RUN VALIDITY: INVALID")
     lines.append("-" * 60)
 
     # HARD FAIL surface: an invalid run is worse than no gate, so it is loud.
     if not report.valid:
-        if report.selftest_verdict != CAUGHT:
+        # Only an EXPLICIT self-test that came back un-caught voids the run; a
+        # None verdict means "no self-test configured", which is not a failure.
+        if report.selftest_verdict in (SURVIVED, INDETERMINATE):
             lines.append(
-                f"::error title=Mutation run invalid::self-test verdict is "
-                f"'{report.selftest_verdict or 'MISSING'}', not 'caught' — the "
+                f"::error title=Mutation run invalid::the configured self-test "
+                f"came back '{report.selftest_verdict}', not 'caught' — the "
                 f"harness is not provably killing mutants, so the run is VOID. "
-                f"Re-run serially (e.g. cargo-mutants -j 1) and confirm a "
+                f"Re-run serially (e.g. cargo-mutants -j 1) and confirm the "
                 f"known-killable mutant is caught.")
         if report.indeterminate:
             lines.append(
@@ -190,6 +195,16 @@ def render_report(report: RunReport) -> str:
                 f"mutant(s) never recompiled (tested the UNMUTATED binary) — "
                 f"their outcome is an artefact, NOT a survivor. Indeterminate: "
                 + ", ".join(report.indeterminates))
+
+    # ADVISORY heads-up: a VALID run that killed nothing (and had no explicit
+    # self-test) may mean the harness isn't actually asserting. Non-blocking.
+    if (report.valid and report.selftest_verdict is None
+            and report.total > 0 and report.caught == 0):
+        lines.append(
+            "::warning title=Mutation run killed nothing::this run caught 0 of "
+            f"{report.total} built mutant(s). That is a valid coverage-gap "
+            "signal, but if it is unexpected the suite may not be asserting — "
+            "configure --selftest with a known-killable mutant to rule that out.")
 
     # ADVISORY surface: survivors need a ledger disposition, never a fail.
     if report.survivors:
@@ -264,15 +279,36 @@ _CARGO_KILLED = {"CaughtMutant", "Timeout"}
 _CARGO_UNVIABLE = {"Unviable"}
 
 
+def parse_package_name(toml_text: str) -> str:
+    """Crate name from the `[package]` table ONLY.
+
+    A whole-file `name = "..."` search is wrong: a workspace root has a
+    `[workspace]`/member `name`, and a `[[bin]] name = ...` can appear before
+    `[package]`. Grabbing either yields a build marker (`Compiling <wrong>`) that
+    never appears in a mutant log, so every mutant looks INDETERMINATE and the
+    run false-fails. Returns "" when there is no `[package] name` (the caller
+    then falls back / the user sets --build-marker).
+    """
+    section = None
+    for line in toml_text.splitlines():
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            section = s.strip("[]").strip()
+            continue
+        if section == "package":
+            m = re.match(r'name\s*=\s*"([^"]+)"', s)
+            if m:
+                return m.group(1)
+    return ""
+
+
 def _cargo_crate_name(root: str) -> str:
     """Best-effort crate name from Cargo.toml, for the `Compiling <crate>` marker."""
     try:
         with open(os.path.join(root, "Cargo.toml")) as fh:
-            text = fh.read()
+            return parse_package_name(fh.read())
     except OSError:
         return ""
-    m = re.search(r'(?m)^\s*name\s*=\s*"([^"]+)"', text)
-    return m.group(1) if m else ""
 
 
 def _cargo_results(root: str, out_dir: str,
@@ -310,8 +346,15 @@ def _run_cargo_mutants(root: str, changed: bool, base: str,
     if changed:
         diff = os.path.join(root, ".mutation-diff.patch")
         with open(diff, "w") as fh:
-            subprocess.run(["git", "diff", "--merge-base", base],
-                           cwd=root, stdout=fh, check=False)
+            r = subprocess.run(["git", "diff", "--merge-base", base],
+                               cwd=root, stdout=fh, check=False)
+        if r.returncode != 0:
+            # Surface it: a failed diff writes an EMPTY patch, so the run would
+            # otherwise look like a legitimate "no mutants" skip and hide a real
+            # git error (bad/unreachable base).
+            print(f"::warning title=Mutation gate::`git diff --merge-base "
+                  f"{base}` failed (rc={r.returncode}); the changed-line set may "
+                  f"be empty and the gate may skip when it should not.")
         cmd += ["--in-diff", diff]
     subprocess.run(cmd, cwd=root, check=False)
     return out_dir
@@ -338,11 +381,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--base", default="HEAD~1",
                     help="base ref for --changed diff (default: HEAD~1)")
     ap.add_argument("--build-marker", default=None,
-                    help="recompile signal (default: 'Compiling <crate>')")
+                    help="recompile signal (default: 'Compiling <crate>' from the "
+                         "[package] name; SET THIS in a Cargo workspace, where the "
+                         "mutated sub-crate differs from the root)")
     ap.add_argument("--selftest", default=None,
                     choices=[CAUGHT, SURVIVED, INDETERMINATE],
-                    help="explicit known-killable self-test verdict; if omitted "
-                         "an implicit self-test (any genuine kill) is used")
+                    help="verdict of a separately-run known-killable mutant; if "
+                         "omitted, validity rests on build evidence alone (no "
+                         "implicit 'must kill something' requirement)")
     ap.add_argument("--timeout", type=int, default=120,
                     help="per-mutant timeout in seconds (a mutant can hang)")
     ap.add_argument("--root", default=".", help="repo root (default: cwd)")
@@ -382,8 +428,19 @@ def main(argv: Optional[List[str]] = None) -> int:
               f"cargo-mutants output: {exc}")
         return 1
 
-    selftest = args.selftest or implicit_selftest_verdict(mutants)
-    report = classify_run(mutants, selftest)
+    if not mutants:
+        # No mutants (e.g. a docs/config-only diff on a Rust repo under
+        # --changed) is a degenerate but VALID state — nothing to corrupt.
+        # Skip loudly, never hard-fail (the bug two reviewers caught on #50).
+        return _loud_skip(
+            "cargo-mutants produced no mutants — the changed lines contain no "
+            "mutatable code. Nothing to verify (not a failure).")
+
+    # Validity rests on build evidence; --selftest (if a caller ran a
+    # known-killable mutant) is an optional stronger guard. There is NO implicit
+    # "must have killed something" requirement — a clean all-survivors run is an
+    # advisory coverage gap, not an invalid run.
+    report = classify_run(mutants, args.selftest)
     print(render_report(report))
     return report.exit_code
 
