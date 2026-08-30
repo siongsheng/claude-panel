@@ -1,0 +1,37 @@
+{
+  "$schema": "./delivery-policy.schema.json",
+  "version": 1,
+  "risk": {
+    "default": "low",
+    "rules": [
+      {
+        "level": "medium",
+        "paths": ["src/api/**", "package-lock.json", "requirements*.txt"]
+      },
+      {
+        "level": "high",
+        "paths": ["auth/**", "migrations/**", "infra/**"]
+      }
+    ]
+  },
+  "requirements": {
+    "low": [
+      {"kind": "functional", "name": "tests", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]},
+      {"kind": "architecture", "name": "architecture-review", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]},
+      {"kind": "security", "name": "security-review", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]}
+    ],
+    "medium": [
+      {"kind": "functional", "name": "tests", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]},
+      {"kind": "architecture", "name": "architecture-review", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]},
+      {"kind": "security", "name": "security-review", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]},
+      {"kind": "performance", "name": "performance", "require_environment": true}
+    ],
+    "high": [
+      {"kind": "functional", "name": "tests", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]},
+      {"kind": "architecture", "name": "architecture-review", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]},
+      {"kind": "security", "name": "security-review", "skip_when_all_paths": ["**.md", "**.markdown", "**.rst", "**.adoc", "LICENSE"]},
+      {"kind": "performance", "name": "performance", "require_environment": true, "require_artifact": true},
+      {"kind": "endurance", "name": "endurance", "require_environment": true, "require_artifact": true}
+    ]
+  }
+}

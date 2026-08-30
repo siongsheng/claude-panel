@@ -165,3 +165,38 @@ SHOULD-FIX, CSS-feat downgrade, `chore:`-touching-code excluded,
 GREEN-before-RED BLOCKER, multi-language test-file detection) plus integration
 tests that build a throwaway git repo in a tempdir and run the real script for
 passing, Rust-co-located-passing, bundled-failing, and invalid-ref cases.
+
+## `delivery-gate`
+
+`delivery-gate` is a second, independent hard-gate primitive. It does not run CI jobs or
+scrape a universal lifecycle. A repository-owned workflow or thin provider binding writes a
+`delivery-evidence.json` envelope from its authoritative checks/artifacts; the gate then
+verifies:
+
+- path-derived risk cannot be lowered by a declaration;
+- every check required at that risk tier exists and passed;
+- every check is bound to the exact PR head SHA and requirement/spec digest;
+- higher risk tiers cannot silently drop or weaken lower-tier requirements;
+- each check links back to its authoritative CI source;
+- performance/endurance evidence includes OS, architecture, runtime, and hardware when
+  policy requires environment binding;
+- required artifacts carry a SHA-256 digest.
+
+Requirements may declare `skip_when_all_paths` for deterministic inert changes (for
+example, the same docs-only allowlist used by reviewer workflows). Skips are reported
+explicitly; absence without a matching skip rule still blocks.
+
+```sh
+python3 bin/delivery-gate \
+  --policy .panel/delivery-policy.json \
+  --evidence delivery-evidence.json
+
+python3 bin/delivery-gate \
+  --policy .panel/delivery-policy.json \
+  --print-policy-digest
+
+python3 bin/test_delivery_gate.py
+```
+
+Exit `0` is PASS, `1` is a policy/evidence BLOCK, and `2` is invalid input. The templates
+and JSON Schemas live next to panel's other vendored resources.

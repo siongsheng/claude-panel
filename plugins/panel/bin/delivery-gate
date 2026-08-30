@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""Deterministically aggregate revision-bound delivery evidence.
+
+The gate does not run tests and does not invent engineering state. It verifies a
+small attestation envelope produced by repository-owned CI jobs. Each required
+check must be green, point at the exact head/spec revision, and carry the
+environment/artifact metadata required by policy.
+
+Usage:
+    delivery-gate --policy .panel/delivery-policy.json \
+                  --evidence delivery-evidence.json [--json]
+"""
+
+import argparse
+import fnmatch
+import hashlib
+import json
+import pathlib
+import re
+import sys
+from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlparse
+
+
+RISK_LEVELS = ("low", "medium", "high")
+PASS_STATUSES = {"pass", "passed", "success", "successful"}
+SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+ENVIRONMENT_FIELDS = ("os", "arch", "runtime", "hardware")
+
+
+def _risk_index(level: str) -> int:
+    if level not in RISK_LEVELS:
+        raise ValueError("unknown risk level %r (expected low, medium, or high)" % level)
+    return RISK_LEVELS.index(level)
+
+
+def classify_risk(policy: Dict[str, Any], changed_files: Iterable[str]) -> str:
+    """Return the highest policy risk whose path rule matches."""
+    risk = policy.get("risk") or {}
+    selected = risk.get("default", "low")
+    _risk_index(selected)
+    files = [str(path).replace("\\", "/") for path in changed_files]
+    for rule in risk.get("rules", []):
+        level = rule.get("level")
+        _risk_index(level)
+        patterns = rule.get("paths") or []
+        if any(fnmatch.fnmatchcase(path, pattern) for path in files for pattern in patterns):
+            if _risk_index(level) > _risk_index(selected):
+                selected = level
+    return selected
+
+
+def all_paths_match(changed_files: Iterable[str], patterns: Iterable[str]) -> bool:
+    files = [str(path).replace("\\", "/") for path in changed_files]
+    globs = list(patterns)
+    return bool(files and globs) and all(
+        any(fnmatch.fnmatchcase(path, pattern) for pattern in globs) for path in files
+    )
+
+
+def policy_digest(policy: Dict[str, Any]) -> str:
+    canonical = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+
+def _validate_document(policy: Dict[str, Any], evidence: Dict[str, Any]) -> None:
+    if policy.get("version") != 1:
+        raise ValueError("policy.version must be 1")
+    if evidence.get("version") != 1:
+        raise ValueError("evidence.version must be 1")
+    revision = evidence.get("revision") or {}
+    if not revision.get("repository"):
+        raise ValueError("evidence.revision.repository is required")
+    if not revision.get("head_sha"):
+        raise ValueError("evidence.revision.head_sha is required")
+    if not SHA256_RE.match(revision.get("spec_digest", "")):
+        raise ValueError("evidence.revision.spec_digest must be sha256:<64 lowercase hex>")
+    if not SHA256_RE.match(revision.get("policy_digest", "")):
+        raise ValueError("evidence.revision.policy_digest must be sha256:<64 lowercase hex>")
+    expected_policy = policy_digest(policy)
+    if revision["policy_digest"] != expected_policy:
+        raise ValueError(
+            "evidence.revision.policy_digest does not match the evaluated policy (%s)"
+            % expected_policy
+        )
+    requirements = policy.get("requirements") or {}
+    previous: Dict[tuple, Dict[str, Any]] = {}
+    for level in RISK_LEVELS:
+        if level not in requirements or not isinstance(requirements[level], list):
+            raise ValueError("policy.requirements.%s must be a list" % level)
+        current: Dict[tuple, Dict[str, Any]] = {}
+        for item in requirements[level]:
+            if not isinstance(item, dict) or not item.get("kind") or not item.get("name"):
+                raise ValueError("policy.requirements.%s entries need kind and name" % level)
+            key = (item["kind"], item["name"])
+            if key in current:
+                raise ValueError(
+                    "policy.requirements.%s duplicates %s/%s" % (level, key[0], key[1])
+                )
+            current[key] = item
+        for key, lower in previous.items():
+            if key not in current:
+                raise ValueError(
+                    "policy.requirements.%s cannot drop %s/%s from a lower risk tier"
+                    % (level, key[0], key[1])
+                )
+            for flag in ("require_environment", "require_artifact"):
+                if lower.get(flag) and not current[key].get(flag):
+                    raise ValueError(
+                        "policy.requirements.%s cannot weaken %s for %s/%s"
+                        % (level, flag, key[0], key[1])
+                    )
+            higher_skip = current[key].get("skip_when_all_paths") or []
+            lower_skip = lower.get("skip_when_all_paths") or []
+            if higher_skip and higher_skip != lower_skip:
+                raise ValueError(
+                    "policy.requirements.%s cannot broaden/change skip_when_all_paths for %s/%s"
+                    % (level, key[0], key[1])
+                )
+        previous = current
+
+
+def _check_failure(
+    check: Dict[str, Any], requirement: Dict[str, Any], revision: Dict[str, Any]
+) -> Optional[str]:
+    label = "%s/%s" % (requirement["kind"], requirement["name"])
+    if str(check.get("status", "")).lower() not in PASS_STATUSES:
+        return "%s did not pass (status=%s)" % (label, check.get("status", "missing"))
+    if check.get("head_sha") != revision["head_sha"]:
+        return "%s head_sha is stale or mismatched" % label
+    if check.get("spec_digest") != revision["spec_digest"]:
+        return "%s spec_digest is stale or mismatched" % label
+    source = urlparse(check.get("source_url", ""))
+    if source.scheme not in {"http", "https"} or not source.netloc:
+        return "%s has no valid source_url" % label
+    if requirement.get("require_environment"):
+        environment = check.get("environment") or {}
+        missing = [field for field in ENVIRONMENT_FIELDS if not environment.get(field)]
+        if missing:
+            return "%s environment missing %s" % (label, ", ".join(missing))
+    if requirement.get("require_artifact") and not SHA256_RE.match(
+        check.get("artifact_digest", "")
+    ):
+        return "%s artifact_digest must bind a sha256 artifact" % label
+    return None
+
+
+def evaluate(policy: Dict[str, Any], evidence: Dict[str, Any]) -> Dict[str, Any]:
+    """Evaluate evidence without IO; suitable for CI and unit tests."""
+    _validate_document(policy, evidence)
+    path_risk = classify_risk(policy, evidence.get("changed_files") or [])
+    declared = evidence.get("declared_risk", "low")
+    _risk_index(declared)
+    risk = max((path_risk, declared), key=_risk_index)
+    revision = evidence["revision"]
+    checks = evidence.get("checks") or []
+    failures: List[str] = []
+    satisfied: List[str] = []
+    skipped: List[str] = []
+
+    for requirement in policy["requirements"][risk]:
+        kind = requirement.get("kind")
+        name = requirement.get("name")
+        if not kind or not name:
+            raise ValueError("each requirement needs kind and name")
+        label = "%s/%s" % (kind, name)
+        if all_paths_match(
+            evidence.get("changed_files") or [], requirement.get("skip_when_all_paths") or []
+        ):
+            skipped.append(label)
+            continue
+        matches = [
+            check
+            for check in checks
+            if check.get("kind") == kind and check.get("name") == name
+        ]
+        if not matches:
+            failures.append("missing required %s" % label)
+            continue
+        # Duplicate attestations do not let an old failure hide behind a pass.
+        item_failures = [
+            failure
+            for failure in (_check_failure(check, requirement, revision) for check in matches)
+            if failure
+        ]
+        if item_failures:
+            failures.extend(item_failures)
+        else:
+            satisfied.append(label)
+
+    return {
+        "version": 1,
+        "decision": "PASS" if not failures else "BLOCK",
+        "ok": not failures,
+        "risk": risk,
+        "path_risk": path_risk,
+        "declared_risk": declared,
+        "revision": revision,
+        "satisfied": satisfied,
+        "skipped": skipped,
+        "failures": failures,
+    }
+
+
+def render(report: Dict[str, Any]) -> str:
+    lines = [
+        "DELIVERY GATE: %s" % report["decision"],
+        "Risk: %s (paths=%s, declared=%s)"
+        % (report["risk"], report["path_risk"], report["declared_risk"]),
+        "Revision: %s@%s" % (
+            report["revision"]["repository"],
+            report["revision"]["head_sha"],
+        ),
+    ]
+    if report["satisfied"]:
+        lines.append("Satisfied: " + ", ".join(report["satisfied"]))
+    if report["skipped"]:
+        lines.append("Deterministically skipped: " + ", ".join(report["skipped"]))
+    if report["failures"]:
+        lines.append("Failures:")
+        lines.extend("- " + failure for failure in report["failures"])
+    return "\n".join(lines)
+
+
+def _read_json(path: str) -> Dict[str, Any]:
+    with pathlib.Path(path).open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise ValueError("%s must contain a JSON object" % path)
+    return data
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--policy", required=True)
+    parser.add_argument("--evidence")
+    parser.add_argument(
+        "--print-policy-digest",
+        action="store_true",
+        help="print the canonical policy digest and exit",
+    )
+    parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    args = parser.parse_args(argv)
+    try:
+        policy = _read_json(args.policy)
+        if args.print_policy_digest:
+            print(policy_digest(policy))
+            return 0
+        if not args.evidence:
+            parser.error("--evidence is required unless --print-policy-digest is used")
+        report = evaluate(policy, _read_json(args.evidence))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print("delivery-gate: invalid input: %s" % exc, file=sys.stderr)
+        return 2
+    print(json.dumps(report, indent=2, sort_keys=True) if args.json else render(report))
+    return 0 if report["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
