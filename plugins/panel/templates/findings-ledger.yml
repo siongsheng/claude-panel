@@ -25,7 +25,7 @@ on:
     # NAME CONTRACT: each entry MUST exactly match a reviewer workflow's `name:`.
     # These are also the names the waiter filters on (REVIEWERS below). Rename a
     # reviewer without updating BOTH places and the ledger silently stops firing.
-    workflows: ["Claude Code Review", "Architecture review", "DeepSeek review", "TDD gate"]
+    workflows: ["Claude Code Review", "Architecture review", "Security review", "DeepSeek review", "TDD gate"]
     types: [completed]
 
 permissions:
@@ -55,7 +55,7 @@ jobs:
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       REPO: ${{ github.repository }}
       # Must match the `workflows:` list above (the reviewer workflow names).
-      REVIEWERS: 'Claude Code Review|Architecture review|DeepSeek review|TDD gate'
+      REVIEWERS: 'Claude Code Review|Architecture review|Security review|DeepSeek review|TDD gate'
     steps:
       - name: Skip notice (no token)
         if: env.HAS_TOKEN != 'true'
@@ -169,7 +169,7 @@ jobs:
             Every reviewer input is ALREADY gathered as files in `.ledger-inputs/`.
             Do NOT call gh or git. Read these files:
               - reviewer_outputs.md : every reviewer's output (DeepSeek, Claude
-                /code-review, architecture review, inline comments)
+                /code-review, architecture, security, inline comments)
               - diff.patch          : the PR diff, for context
               - existing.md         : the CURRENT ledger body (empty if none yet)
               - today.txt           : today's UTC date (for the audit log line)
@@ -209,11 +209,11 @@ jobs:
             3. RECORD COVERAGE (which reviewers ran) as a line under the table.
                VISIBLE DOWNGRADE: if `diff.patch` is entirely inert docs/prose —
                EVERY changed file matches the allowlist `**.md`/`.markdown`/`.rst`/
-               `.adoc`, `LICENSE` — then the Architecture and
+               `.adoc`, `LICENSE` — then the Architecture, Security, and
                DeepSeek reviewers were skipped by CI `paths-ignore` (that is why
                their comments are absent, NOT because they ran clean). Record it
-               explicitly, e.g. `Architecture + Cross-model (DeepSeek) ⏭️ skipped —
-               low blast radius (docs-only diff)`. If ANY changed file is non-inert,
+               explicitly, e.g. `Architecture + Security + Cross-model (DeepSeek)
+               ⏭️ skipped — low blast radius (docs-only diff)`. If ANY changed file is non-inert,
                a missing reviewer means it genuinely produced no comment — do NOT
                claim a blast-radius skip. (See the findings-ledger skill's "Record
                which reviewers ran" section.)
