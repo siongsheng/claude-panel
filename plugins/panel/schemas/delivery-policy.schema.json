@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://siongsheng.github.io/claude-panel/delivery-policy.schema.json",
+  "title": "Panel delivery policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "risk", "requirements"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "version": {"const": 1},
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "rules"],
+      "properties": {
+        "default": {"enum": ["low", "medium", "high"]},
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["level", "paths"],
+            "properties": {
+              "level": {"enum": ["low", "medium", "high"]},
+              "paths": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+            }
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["low", "medium", "high"],
+      "properties": {
+        "low": {"$ref": "#/$defs/requirements"},
+        "medium": {"$ref": "#/$defs/requirements"},
+        "high": {"$ref": "#/$defs/requirements"}
+      }
+    }
+  },
+  "$defs": {
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "name"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "require_environment": {"type": "boolean"},
+          "require_artifact": {"type": "boolean"},
+          "skip_when_all_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

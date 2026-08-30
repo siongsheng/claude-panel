@@ -22,6 +22,9 @@ language or stack.
 - **Gates are hard.** The deterministic TDD gate (`bin/tdd-check`) and the repo's CI
   must be green before review is considered complete. A red gate blocks; it is not a
   suggestion.
+- **Security is independent.** Implementers write defensively, but a fresh security
+  reviewer still examines every non-inert change. Secure implementation is not
+  permission to grade one's own security work.
 
 ## The loop
 
@@ -41,6 +44,11 @@ phases via `/feature-dev`) to explore the approach and settle the design before 
 code is written. The plan covers only the gap identified in step 1, not the whole
 feature surface.
 
+Classify delivery risk from the repository's `.panel/delivery-policy.json` when present.
+Path rules provide a deterministic floor; a human or project may raise the declared risk
+but never lower the path-derived tier. Carry that tier into verification so performance
+and endurance run only when policy requires them.
+
 ### 3. Branch + implement (two-commit TDD)
 Work on a feature branch (never the default branch). If the work is parallelizable or
 you want isolation from the working tree, use superpowers' `using-git-worktrees` to
@@ -55,6 +63,10 @@ the cycle:
 - The `test:` commit MUST be a git **ancestor** of the `feat:` commit (ancestry, not
   wall-clock time — this is what the gate in step 4 verifies).
 - A single bundled commit (tests + implementation together) is a BLOCKER.
+
+During implementation, apply secure-by-default discipline at each changed trust boundary:
+validate untrusted input at entry, authorize the operation (not merely the route), encode
+at the sink, bound resources, avoid secret exposure, and add abuse/failure-path tests.
 
 Prefer having an implementer subagent do the code so the supervising context stays
 clean and can later host an independent reviewer. The implementer does not run the
@@ -98,6 +110,10 @@ cross-model family is **additive and opt-out** (see below):
     specialties (type-design, silent-failure, test-gap, comment accuracy). It does
     NOT review system architecture, so it is an *addition* to the required reviewer
     above, never a substitute for it.
+  - **Security (REQUIRED for non-inert changes):** invoke panel's `security-review`
+    skill in a fresh context that did not implement the change. This is a dedicated
+    attack-path review, not a subsection delegated to correctness or architecture.
+    CI's `Security review` workflow is its independent counterpart.
 - **Cross-model reviewer (additive, OPT-OUT):** `scripts/deepseek_review.py <pr> --post`
   (path relative to this plugin) so a second model family (DeepSeek) cross-checks with
   different blind spots. Invoke the `multi-model-review` skill if this is the first run
@@ -144,7 +160,7 @@ strictly more context than the CI job: it holds THIS loop's in-session subagent 
 (step 5), which are never posted as PR comments and which the CI ledger therefore cannot
 see. So compose the ledger from BOTH the in-session reviews AND the CI reviewers' comments.
 
-Because the CI reviewers (DeepSeek, architecture, official `/code-review`) finish
+Because the CI reviewers (DeepSeek, architecture, security, official `/code-review`) finish
 asynchronously, run this as a **background agent** so the loop is not blocked. This one
 agent is the **SINGLE in-session writer** of the ledger comment — it also files the
 deferred issues (step 9) so there is never a second concurrent writer racing it on the
@@ -171,7 +187,7 @@ one sticky comment:
    marker-asserting poster the CI path uses.
 
 The loop is not blocked *during* the wait — you keep working while the agent polls CI. But
-steps 9 and 10 **depend on this agent's output**, so they do not run concurrently with it:
+steps 9–11 **depend on this agent's output**, so they do not run concurrently with it:
 step 9 IS performed inside this agent (item 4 above), and step 10 **awaits** it. (Note: a
 background agent lives only as long as this session — that's exactly why the CI auto-ledger
 remains the fallback for PRs no one is driving with `/panel`.)
@@ -186,9 +202,24 @@ judgment gets `design-decision`; only Fixed and Rejected go untracked), filed vi
 ledger writer is deliberate: it keeps ONE writer on the sticky comment, so the link-backs
 can't race the compose.
 
-### 10. Pause for merge
+### 10. Revision-bound delivery gate
+**Await the step-8 background agent**, then, when `.panel/delivery-policy.json` exists,
+assemble `delivery-evidence.json` from repository-owned CI checks/artifacts and run:
+
+`bin/delivery-gate --policy .panel/delivery-policy.json --evidence delivery-evidence.json`
+
+The binding that assembles the envelope stays project/provider-specific; do not teach panel
+another team's SDLC. Every attestation must match the exact PR head and spec digest, link to
+its authoritative CI source, and include OS/architecture/runtime/hardware metadata whenever
+policy asks for environment-bound performance or endurance evidence. A missing, failed,
+stale, or malformed required attestation blocks. The gate may aggregate truth; it may not
+manufacture it. If no policy exists, report that the delivery-contract gate is not adopted
+instead of silently claiming it passed.
+
+### 11. Pause for merge
 **Await the step-8 background agent** (so the ledger is posted and the deferred issues are
-filed + linked), then report the PR link and the ledger summary and **STOP**. Do not merge,
+filed + linked), confirm the step-10 delivery verdict, then report the PR link and the ledger
+summary and **STOP**. Do not merge,
 and do not start any follow-up work until the human merges or explicitly says to continue.
 (If the human wants to move on before the agent settles, report the PR link immediately and
 note the ledger is finalizing asynchronously — but never claim a ledger summary you haven't

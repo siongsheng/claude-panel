@@ -1,6 +1,6 @@
 {
   "name": "panel",
-  "description": "Prevention-first development panel: a YAGNI gate before code is written, spec-strategist templates, deterministic two-commit TDD enforcement, cross-model adversarial review (Claude + DeepSeek), and a single edited-in-place findings ledger with auto-filed tracking issues. Composes the official feature-dev workflow.",
+  "description": "Prevention-first development panel: YAGNI, deterministic TDD and delivery gates, independent architecture/security/cross-model review, and a single findings ledger. Composes the official feature-dev workflow.",
   "author": {
     "name": "siongsheng"
   }

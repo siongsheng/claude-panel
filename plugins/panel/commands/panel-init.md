@@ -44,9 +44,10 @@ Confirm: `gh auth status` is authenticated, the working directory is the target 
 repo, and the user has admin on the repo (secrets + App install need it). Determine the
 repo slug (`gh repo view --json nameWithOwner`). Also confirm this plugin's own vendored
 resources exist under `PLUGIN_ROOT` — `templates/deepseek-review.yml`,
-`templates/architecture-review.yml`, `templates/tdd-gate.yml`,
+`templates/architecture-review.yml`, `templates/security-review.yml`, `templates/tdd-gate.yml`,
 `templates/findings-ledger.yml`, `scripts/deepseek_review.py`,
-`scripts/post_sticky_comment.py`, `bin/tdd-check`, `bin/test_tdd_check.py` — so init
+`scripts/post_sticky_comment.py`, `bin/tdd-check`, `bin/test_tdd_check.py`,
+`bin/delivery-gate`, `bin/test_delivery_gate.py`, and both delivery JSON schemas — so init
 triages itself up front instead of crashing mid-run. If any precondition fails, report
 exactly what's missing / what the human must do and stop.
 
@@ -77,7 +78,7 @@ sets `CLAUDE_CODE_OAUTH_TOKEN`, and adds two workflows under `.github/workflows/
 review running `/code-review` = **correctness/quality**). **Leave these untouched** —
 don't edit Anthropic's provided files.
 
-That official review does NOT do a dedicated **architecture** review, so also vendor this
+That official review does NOT do a dedicated **architecture** or **security** review, so also vendor this
 plugin's `templates/architecture-review.yml` → `.github/workflows/architecture-review.yml`.
 This is the **universal architecture floor**: a repo-agnostic `claude-code-action` prompt
 (no plugin dependency) that **distills the stable patterns** from surveyed
@@ -87,10 +88,16 @@ the `CLAUDE_CODE_OAUTH_TOKEN` set above, no-ops cleanly without it, and reviews 
 `base..head` diff. The criteria are decades-stable, so the floor doesn't track any
 fast-moving (or differently-licensed) third-party skill.
 
-**Branch-protection caveat (both advisory reviewers).** `architecture-review` and
-`deepseek-review` use `paths-ignore` to right-size away on provably-inert docs/prose diffs
-— a skipped workflow reports **no status at all**. So do NOT mark "Architecture review" or
-"DeepSeek review" as **required** status checks in branch protection: an inert PR would
+Also vendor `templates/security-review.yml` → `.github/workflows/security-review.yml`.
+It runs in a separate, fresh CI context and covers changed trust boundaries, abuse paths,
+authorization, secrets, data handling, injection/SSRF/path traversal, dependencies, resource
+bounds, and security tests. It complements correctness and architecture and does not replace
+deterministic scanners already owned by the target repository.
+
+**Branch-protection caveat (advisory reviewers).** `architecture-review`,
+`security-review`, and `deepseek-review` use `paths-ignore` to right-size away on provably-inert docs/prose diffs
+— a skipped workflow reports **no status at all**. So do NOT mark "Architecture review",
+"Security review", or "DeepSeek review" as **required** status checks in branch protection: an inert PR would
 wait forever for a check that never reports. Keep them advisory (non-required); the hard
 required check is the deterministic `tdd-gate`, which always runs.
 
@@ -108,7 +115,7 @@ matches (or the user declines), the universal floor above still runs — archite
 never left unreviewed.
 
 The rule is **one workflow per DISTINCT review function, never a duplicate**: correctness
-(official `claude-code-review`) and architecture (this floor) are complementary. Together
+(official `claude-code-review`), architecture, and security are complementary. Together
 they are the CI counterpart to the in-session Claude reviewers the `/panel` loop runs;
 either satisfies the Claude-side floor.
 
@@ -175,6 +182,14 @@ CI cannot see plugin-local paths, so vendor the checker, ITS TESTS, and its work
 If the repo already has a `pull_request` workflow you'd rather extend, add an equivalent
 step there instead of a second workflow (never clobber the existing one). The gate must
 fail a bundled-commit / broken-ancestry branch.
+
+Also vendor `bin/delivery-gate`, `bin/test_delivery_gate.py`, the two schemas, and the
+delivery policy/evidence examples. Ask before creating `.panel/delivery-policy.json`; a
+repository adopting it must tailor path risks and check names to its existing CI. Do not
+invent a universal lifecycle adapter. The target repo's CI (or its thin provider binding)
+assembles the evidence envelope; `delivery-gate` only validates and aggregates it. Confirm
+the checker with `python3 bin/test_delivery_gate.py`. Once a policy is present, its gate is
+hard and must be wired into the repository's existing required CI workflow.
 
 ### 6. Auto findings ledger
 Vendor this plugin's `templates/findings-ledger.yml` → `.github/workflows/findings-ledger.yml`.

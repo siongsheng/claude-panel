@@ -1,0 +1,22 @@
+{
+  "$schema": "./delivery-evidence.schema.json",
+  "version": 1,
+  "revision": {
+    "repository": "owner/repository",
+    "head_sha": "replace-with-pr-head-sha",
+    "spec_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "policy_digest": "sha256:5173c7fa830a5a4a38a781c535c24a005e919195cf5a34345145449d91b3f1a6"
+  },
+  "declared_risk": "low",
+  "changed_files": ["src/example.py"],
+  "checks": [
+    {
+      "kind": "functional",
+      "name": "tests",
+      "status": "pass",
+      "head_sha": "replace-with-pr-head-sha",
+      "spec_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_url": "https://github.com/owner/repository/actions/runs/1"
+    }
+  ]
+}

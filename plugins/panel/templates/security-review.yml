@@ -1,0 +1,88 @@
+name: Security review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
+    paths-ignore:
+      - '**.md'
+      - '**.markdown'
+      - '**.rst'
+      - '**.adoc'
+      - 'LICENSE'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  id-token: write
+
+concurrency:
+  group: security-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  security-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      MARK: '## 🔐 Security Review'
+    steps:
+      - name: Skip notice
+        if: env.HAS_TOKEN != 'true'
+        run: echo "CLAUDE_CODE_OAUTH_TOKEN not set -- skipping security review. Run /install-github-app or run the panel security-review skill locally."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Gather revision-bound diff
+        if: env.HAS_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p .security-review
+          gh pr diff "$PR" > .security-review/diff.patch 2>/dev/null \
+            || { echo "::warning title=Security review::gh pr diff failed -- reviewing an empty diff (check gh/token)."; : > .security-review/diff.patch; }
+          printf '%s\n' '${{ github.event.pull_request.head.sha }}' > .security-review/head-sha
+
+      - name: Compose independent security review
+        if: env.HAS_TOKEN == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: '--allowed-tools "Read,Write,Grep,Glob"'
+          prompt: |
+            You are the independent SECURITY reviewer for PR #${{ env.PR }}.
+            You did not implement this change. Correctness and architecture have separate
+            reviewers; focus only on security and abuse resistance.
+
+            Read `.security-review/diff.patch` and `.security-review/head-sha`, then inspect
+            the surrounding code and repository guidance. Map changed trust boundaries,
+            untrusted inputs, identities, authorization checks, secrets, data stores, and
+            outbound calls. Trace data source-to-sink. Review authentication/session logic,
+            tenant isolation, injection, SSRF, path traversal, unsafe deserialization,
+            cryptography, dependency/supply-chain risk, privacy/logging, resource bounds,
+            and security test coverage where relevant.
+
+            Every finding needs: severity, changed file/line, attacker precondition,
+            concrete exploit path, impact, and smallest remediation. Do not emit generic
+            checklist concerns without a plausible attack path. Separate defects introduced
+            by this PR from inherited debt. End with one verdict: PASS, PASS WITH FOLLOW-UPS,
+            or BLOCK.
+
+            Write the complete review to `.security-review/review.md`. Its exact first line
+            MUST be:
+            ## 🔐 Security Review
+            Include the reviewed head SHA near the top. Do not post comments yourself.
+
+      - name: Post sticky security review
+        if: env.HAS_TOKEN == 'true'
+        run: >-
+          python3 scripts/post_sticky_comment.py "$PR"
+          --marker "$MARK"
+          --body-file .security-review/review.md

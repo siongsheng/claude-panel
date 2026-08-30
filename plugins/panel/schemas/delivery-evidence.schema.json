@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://siongsheng.github.io/claude-panel/delivery-evidence.schema.json",
+  "title": "Revision-bound delivery evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "revision", "changed_files", "checks"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "version": {"const": 1},
+    "declared_risk": {"enum": ["low", "medium", "high"]},
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "head_sha", "spec_digest", "policy_digest"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "head_sha": {"type": "string", "minLength": 1},
+        "spec_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "policy_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "changed_files": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "name", "status", "head_sha", "spec_digest", "source_url"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "minLength": 1},
+          "head_sha": {"type": "string", "minLength": 1},
+          "spec_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "source_url": {"type": "string", "format": "uri"},
+          "artifact_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "environment": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["os", "arch", "runtime", "hardware"],
+            "properties": {
+              "os": {"type": "string", "minLength": 1},
+              "arch": {"type": "string", "minLength": 1},
+              "runtime": {"type": "string", "minLength": 1},
+              "hardware": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  }
+}
