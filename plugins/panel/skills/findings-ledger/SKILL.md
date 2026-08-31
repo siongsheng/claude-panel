@@ -80,6 +80,25 @@ once filed, upgrade a `⚠️ Needs issue` row to `📋 Deferred → [#N](url)`.
 > separately" placeholder. The `/panel` loop (or a human) then files the issue via
 > `deferred-to-issues` and upgrades the row to the linked form.
 
+## Mutation survivors need a disposition, not silence
+
+A surviving mutant from the mutation gate (`bin/mutation-check`) is a finding too, but a
+special one: it is a *judgement*, not a confirmed defect (it may be an equivalent mutant,
+unreachable, or a deliberately-untested path). So each survivor on the changed lines gets
+its own row, Source `mutation`, whose Status is a **disposition**:
+
+- `🧬 Real gap` — the test genuinely wouldn't catch this break → triage as SHOULD FIX (or
+  BLOCKER on a money/safety path) and, if not fixed here, file an issue like any other.
+- `🧬 Equivalent` — the mutation produces behaviourally identical code at every reachable
+  input → Rejected-equivalent; **state the reasoning inline** (an unexplained "equivalent"
+  is indistinguishable from a dodged gap).
+- `🧬 Accepted` — a deliberately-untested path → give the reason.
+
+The point is the same as everywhere else in this ledger: an **unclassified** survivor reads
+as handled when it isn't. A mutation *run* that came back `INVALID` is NOT a ledger row —
+it is a hard-gate failure (like a red `tdd-check`) and must be fixed before the ledger is
+meaningful, not triaged in it.
+
 ## Record which reviewers ran
 
 The ledger is also the record of coverage. Under the table, note which reviewer families

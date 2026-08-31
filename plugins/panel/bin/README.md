@@ -165,3 +165,43 @@ SHOULD-FIX, CSS-feat downgrade, `chore:`-touching-code excluded,
 GREEN-before-RED BLOCKER, multi-language test-file detection) plus integration
 tests that build a throwaway git repo in a tempdir and run the real script for
 passing, Rust-co-located-passing, bundled-failing, and invalid-ref cases.
+
+---
+
+# `bin/mutation-check` — mutation gate
+
+`mutation-check` verifies that a test would actually **fail if the code broke**
+(mutation testing), and — critically — proves the mutation **run itself** was
+valid before trusting any result. Stdlib-only Python 3.
+
+## Two severities, on the structural-fact vs judgement line
+
+- **RUN VALIDITY (a fact) → hard fail (exit 1).** Build evidence is the primary
+  guard: a mutant that never recompiled tested the *unmutated* binary, so it is
+  `INDETERMINATE`, never a survivor. An optional stronger guard is an explicit
+  `--selftest` known-killable mutant that must come back `caught`. Validity does
+  **not** require this run to have killed anything.
+- **SURVIVAL (a judgement) → advisory (exit 0).** Whether a survivor is a real
+  gap or an equivalent mutant is undecidable, so survivors never block — each
+  gets a findings-ledger disposition.
+
+Skips **loudly** (green) on any repo with no configured mutation tool
+(`cargo-mutants` is wired today) and on a diff that mutates nothing.
+
+## Architecture / testability
+
+The decision core (`has_build_evidence`, `classify_mutant`, `classify_run`,
+`RunReport`, `render_report`, `parse_cargo_outcomes`, `parse_package_name`,
+`detect_ecosystem`) is **pure** and unit-tested with fixtures; the cargo-mutants
+adapter (`_cargo_results`, `_run_cargo_mutants`) and `main` are isolated
+plumbing. `test_mutation_check.py` covers the pure core plus integration tests
+that drive `_cargo_results` against a hand-written `mutants.out/` and exercise
+`main`'s loud-skip / error exit wiring — no `cargo-mutants` install required.
+
+## Run it
+
+```sh
+plugins/panel/bin/mutation-check --changed --base origin/main
+# workspace: pass the mutated sub-crate's marker
+plugins/panel/bin/mutation-check --changed --build-marker "Compiling my-lib"
+```
