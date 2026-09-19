@@ -138,6 +138,29 @@ triage table before any fix. Then apply `adversarial-review`'s inherited-vs-new-
 rule: only defects this change INTRODUCED can block merge; pre-existing debt matching
 the surrounding pattern is a SHOULD FIX, not a blocker.
 
+**Record every verdict as you fill the table in.** The triage table is printed to the
+session and then lost, so no run can be checked against the next one: this command's own
+"expect ~30–40% false" has never been measured, and neither has any reviewer's
+confidence filter. One row per finding, written here rather than at step 8, because this
+is where the verdict is decided and step 8's ledger agent does not block the loop:
+
+```
+acceptance outcome <id> --ref <pr-or-mr> --source <reviewer> \
+                   --severity BLOCKER|'SHOULD FIX'|NIT \
+                   --status Fixed|Rejected|Deferred|Standing|'Needs issue'|Open \
+                   [--fix-sha <sha>] [--tier <tier>]
+```
+
+Then gate step 7 on the count, so a finding cannot be fixed before it has been triaged:
+
+```
+acceptance outcome-gate --ref <pr-or-mr> --expect <number of findings raised>
+```
+
+`acceptance` ships with the `running-to-acceptance` skill, which this plugin does not
+depend on. **If it is not installed, say so in the run output and carry on** — do not
+skip quietly. An unstated skip is how a check comes to exist on paper and run never.
+
 ### 7. Fix (serial by default; parallel clustered when disjoint)
 Fix the confirmed BLOCKERs from triage. Default to ONE sequential fix agent. When the
 PR came back with **many** confirmed fixes that partition into **disjoint file-clusters**,
@@ -224,5 +247,6 @@ before fixing triaged findings, and at the final merge pause).
 
 **Headless (`claude -p "/panel <feature>"`):** run the loop unattended and surface only
 gate failures and review outcomes — the YAGNI verdict, a red TDD/CI gate, the triage
-table, the ledger summary, and the final paused PR link. Suppress step-by-step
-narration. The merge pause still holds: headless mode never merges.
+table, a failed `outcome-gate` or a missing `acceptance`, the ledger summary, and the
+final paused PR link. Suppress step-by-step narration. The merge pause still holds:
+headless mode never merges.
