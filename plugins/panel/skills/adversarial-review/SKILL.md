@@ -9,6 +9,30 @@ A structured review of a change, ideally performed from a different model or a
 fresh context than the one that wrote the code (a same-context reviewer is
 biased — it saw every step and assumes correctness).
 
+## Pre-Review: Capability check
+
+Before anything else, verify you actually have the tools this review assumes — a
+reviewer launched **without** them can do a partial review and return a confident
+verdict that looks identical to a full one (the same silent-degradation failure as a CI
+reviewer that produces no output yet stays green).
+
+Your **first action** is a capability check, and your verdict block **must** carry the
+result explicitly:
+
+```
+tools: git=<yes/no> gh=<yes/no> network=<yes/no>
+```
+
+- The architecture/spec review needs a **diff source** (`git`, or `gh` for the PR): the
+  inherited-vs-new-debt rule is *unenforceable* without one — you cannot say what the
+  change INTRODUCED if you cannot see the diff. If `git`/`gh` are unavailable, review the
+  checked-out worktree plus the spec and **say so up front**; do not silently review less
+  than you claim.
+- A missing required tool does **not** void the verdict — a worktree-only review still
+  finds real defects. Instead mark the verdict **PARTIAL** and name the dimensions you
+  could not cover. The absence of the `tools:` line is itself a red flag the supervisor
+  must treat as an incomplete review.
+
 ## Pre-Review: TDD Verification
 
 Before reading the code, verify the two-commit TDD pattern:
@@ -18,7 +42,7 @@ Before reading the code, verify the two-commit TDD pattern:
 
 **TDD false-positive nuance:** A `feat:`-prefixed commit that changes only CSS, config, or other non-behavioral files does not need a preceding test commit. Don't treat a missing test as a BLOCKER there — instead note that the commit should have been prefixed `chore:` or `style:`. Downgrade to a NIT/SHOULD FIX on the commit message, not a BLOCKER on the change.
 
-## Three Review Dimensions
+## Review Dimensions
 
 ### 1. Spec Compliance
 - Does the approach match the decision the spec settled on?
@@ -37,6 +61,31 @@ Before reading the code, verify the two-commit TDD pattern:
 - Security: injection vectors, exposed secrets, missing auth?
 - Error handling: edge cases, null checks, uncaught exceptions?
 - Performance: N+1 queries, blocking calls where async is needed?
+
+### 4. Reachability — does this ever run?
+Every other dimension asks *"is this correct?"* and answers it assuming the code
+executes. This one asks the question those cannot: **does this code path ever run?**
+It is the lens for the highest-severity recurring class — correct, reviewed,
+mutation-tested logic sitting behind a condition that can never hold. It passes every
+other check *because* every other check evaluates the code as if it executes.
+
+For every **new or modified safety / recovery / error path**, demand **positive evidence
+of execution**:
+- **"Wired" ≠ "runs."** Asserting a mechanism is connected is not enough — say how it was
+  confirmed to *execute*: a greppable log line from real output, a production observation
+  (log/metric/incident), or a test that traverses the **real call site**, not just an
+  extracted decision function.
+- **Any permanently-false condition on the path?** A guard gated on an error the library
+  never yields, a timeout that bounds the wrong wait, a branch whose predicate can't be
+  true. (Real case: a duplicate-order guard gated on an error the library converts to
+  stream termination instead — 6 drains over 3 days, 0 executions, while three PRs
+  hardened its internals.)
+- **Ask the dependency, not its docs.** Both real reachability failures were resolved by
+  reading the vendored library *source*; the docs implied the opposite.
+- **No log line asserting the mechanism ran ⇒ a finding.** The expected shape for a new
+  safety path is that "did it run?" is answerable from logs without a code read.
+
+A dead safety mechanism is a BLOCKER, not a nit: it reports a fix that cannot execute.
 
 ## Severity
 
@@ -57,6 +106,11 @@ Emit exactly one final verdict — do not scatter multiple conflicting verdicts 
 ```
 ## Adversarial Review
 
+### Capability
+tools: git=<yes/no> gh=<yes/no> network=<yes/no>
+(If a required tool is missing, this verdict is PARTIAL — name the dimensions
+it could not cover.)
+
 ### Pre-Review: TDD Check
 - test: commit <hash>
 - feat: commit <hash>
@@ -72,7 +126,26 @@ Emit exactly one final verdict — do not scatter multiple conflicting verdicts 
 ### Code Quality
 | Severity | Finding | Location |
 
+### Reachability
+For each new/modified safety/recovery path: how do we know it EXECUTES?
+(log line / production observation / test through the real call site) — or the
+permanently-false condition that keeps it from running. "n/a — no such path in
+this diff" is a valid, explicit answer; silence is not.
+
+### Checked and disproved
+Suspicions you investigated and **disproved** — settled, so the next round does not
+re-litigate them. One line each, WITH the evidence:
+- <suspicion> → No: <mechanism/reason it doesn't hold>.
+This distinguishes "didn't look" from "looked, it's fine"; it is where the expensive
+verification lives (e.g. "confirmed the decimal compare is value-based, not textual");
+and a reviewer that must *write down* why a suspicion was wrong raises fewer false
+blockers. Empty is allowed but must be explicit ("nothing to disprove this round").
+
 ### Verdict
-VERDICT: APPROVED / CHANGES REQUESTED / BLOCKED
+VERDICT: APPROVED / CHANGES REQUESTED / BLOCKED / PARTIAL (tools missing)
 RISK: LOW / MEDIUM / HIGH
 ```
+
+A **PARTIAL** verdict means a required tool was missing, so some dimensions went
+uncovered — it is not a pass. The supervisor must re-run the reviewer with the missing
+tools before treating the review as complete (see the `/panel` loop, step 5).

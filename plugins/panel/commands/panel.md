@@ -60,6 +60,21 @@ Prefer having an implementer subagent do the code so the supervising context sta
 clean and can later host an independent reviewer. The implementer does not run the
 review.
 
+**Brief contract — every brief (implementer and fix, step 7) MUST end inviting its own
+correction.** The supervisor is the least-reviewed participant in the loop — nobody
+reviews the brief — so this is the only check on it. End each brief with a required
+report-back section, verbatim in spirit:
+
+> *Assume this brief contains a factual error; previous ones did. The most valuable part
+> of your report is **anything here that was wrong, impossible, or that you deviated
+> from** — a named function that doesn't exist, a quoted line that isn't in the source, a
+> count or threshold that's off, an issue it says to close that isn't actually fixed.*
+
+Without this clause an agent that notices its brief is wrong has no mandate to say so, and
+the cheapest path is to build what it was told. In one session this surfaced a spec telling
+the implementer to close an unfixed issue, an invented source quote, and a wrong threshold —
+all caught only because the brief invited it.
+
 If a test won't pass or behavior is wrong, have the implementer invoke superpowers'
 `systematic-debugging` skill to find the root cause before editing — never guess at
 fixes.
@@ -125,6 +140,19 @@ cross-model family is **additive and opt-out** (see below):
   architecture reviewer) still runs, but you forfeit the second-model blind-spot
   coverage — record the skip in the findings ledger so the reduced coverage is visible,
   not silent.
+
+**Capability preflight (every reviewer).** A reviewer subagent can be launched WITHOUT the
+tools its brief assumes, do a partial review, and return a confident verdict that looks
+identical to a full one — the architecture floor has run twice with no `git`/`gh`, unable
+to see the diff its inherited-vs-new-debt rule depends on. So: declare the required tools
+per role in the brief (the architecture/spec reviewer needs a **diff source** — `git` or
+`gh`; the cross-model reviewer needs network + key), require each reviewer's first action
+to be a capability check, and require its verdict to carry an explicit `tools: git=… gh=…`
+line. A reviewer missing a required tool returns a **PARTIAL** verdict (not discarded — a
+worktree-only review still finds real defects), naming the dimensions it could not cover.
+**If a required reviewer came back PARTIAL, re-run it with the missing tools before treating
+the panel as complete** — the absence of the `tools:` line is itself a red flag. (This is
+enforced by the `adversarial-review` skill's Capability check + verdict format.)
 
 The CI-hosted reviewer (the bundled `templates/deepseek-review.yml` Action) also runs
 per-push when a `DEEPSEEK_API_KEY` secret is set; let it. CI must go green (the Action
